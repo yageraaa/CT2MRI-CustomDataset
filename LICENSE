@@ -1,16 +1,21 @@
-Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International License (CC BY-NC-ND 4.0)
+MIT License
 
-This work is licensed under the Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International License. You may use this code for non-commercial purposes only. Any use of the code for commercial purposes is strictly prohibited.
+Copyright (c) 2024 Kyobin Choo
 
-Author: Kyobin Choo
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-Under this license, you are prohibited from:
-- Using this code for commercial purposes.
-- Modifying or creating derivative works based on this code.
-- Distributing or redistributing this code, either in its original form or in modified forms.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-You are free to:
-- Use this code for personal, educational, or research purposes as long as it is non-commercial.
-
-To view a copy of this license, visit:
-https://creativecommons.org/licenses/by-nc-nd/4.0/
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
