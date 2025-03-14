@@ -1,27 +1,24 @@
 #!/bin/bash
-cd /root_dir/code
+cd "$(dirname "$0")/.."
 
-date="241213"
-
+date="$(date +%y%m%d)"
 config_name="BBDM_base.yaml"
-HW="160"
+HW=250
 plane="axial"
 gpu_ids="0"
-batch=16
+batch=16 #поменять если поменял в конфиге
 ddim_eta=0.0
+dataset_type="ct2mr_aligned_global_hist_context"
 
-prefix="MR_global_hist_context"
+exp_name="${date}_${HW}_BBDM_${plane}_DDIM"
 
-exp_name="${date}_${HW}_BBDM_${plane}_DDIM_${prefix}"
+results_dir="results/ct2mr_${HW}" #папка для резов
+mkdir -p "$results_dir/$exp_name/checkpoint"
 
-mkdir /root_dir/code/results/ct2mr_${HW}/$exp_name
-
-resume_model="/root_dir/code/results/ct2mr_$HW/$exp_name/checkpoint/last_model.pth"
-resume_optim="/root_dir/code/results/ct2mr_$HW/$exp_name/checkpoint/last_optim_sche.pth"
-python -u /root_dir/code/main.py \
+python -u main.py \
     --train \
     --exp_name $exp_name \
-    --config /root_dir/code/configs/$config_name \
+    --config "configs/$config_name" \
     --dataset_type $dataset_type \
     --HW $HW \
     --plane $plane \
@@ -29,7 +26,4 @@ python -u /root_dir/code/main.py \
     --ddim_eta $ddim_eta \
     --sample_at_start \
     --save_top \
-    --resume_model $resume_model \
-    --resume_optim $resume_optim \
     --gpu_ids $gpu_ids
-
