@@ -16,21 +16,21 @@ data:
   dataset_name: 'ct2mr'
   dataset_type: 'ct2mr_aligned_global_hist_context'
   dataset_config:
-    dataset_path: '/root_dir/datasets'
-    hist_type:  # 'colin', 'avg'
+    dataset_path: "../" #поменять
+    hist_type: "colin"
     plane: 'axial'
-    image_size: 160
+    image_size: 250
     channels: 3
     to_normal: True
     flip: True
   train:
-    batch_size: 16
+    batch_size: 16 #возможно поменять
     shuffle: True
   val:
-    batch_size: 16
+    batch_size: 16 #возможно поменять
     shuffle: True
   test:
-    batch_size: 16
+    batch_size: 16 #возможно поменять
     shuffle: False
 
 model:
@@ -83,9 +83,9 @@ model:
       inference_type: 'normal' # options {'normal', 'average', 'ISTA_average', 'ISTA_mid'}
       num_ISTA_step: 1
       ISTA_step_size: 2.0
-      
+
       UNetParams:
-        image_size: 160
+        image_size: 250
         in_channels: 6
         model_channels: 128
         out_channels: 3
