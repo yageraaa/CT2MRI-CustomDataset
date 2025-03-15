@@ -4,7 +4,7 @@ from albumentations.pytorch import ToTensorV2
 import numpy as np
 
 class multi_ch_nifti_default_Dataset(Dataset):
-    def __init__(self, image_dataset, index_dataset, subjects, radius, image_size=(160, 160), flip=False, to_normal=False):
+    def __init__(self, image_dataset, index_dataset, subjects, radius, image_size=(250, 250), flip=False, to_normal=False):
         self.image_size = image_size
         self.images = image_dataset
         self.indice = index_dataset
