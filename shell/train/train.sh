@@ -12,7 +12,7 @@ dataset_type="ct2mr_aligned_global_hist_context"
 
 exp_name="${date}_${HW}_BBDM_${plane}_DDIM"
 
-results_dir="results/ct2mr_${HW}" #папка для резов
+results_dir="../results/ct2mr_${HW}"
 mkdir -p "$results_dir/$exp_name/checkpoint"
 
 python -u main.py \
