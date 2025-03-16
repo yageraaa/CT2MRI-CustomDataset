@@ -24,13 +24,13 @@ data:
     to_normal: True
     flip: True
   train:
-    batch_size: 16 #возможно поменять
+    batch_size: 16 #возможно поменять (см сообщение снизу)
     shuffle: True
   val:
-    batch_size: 16 #возможно поменять
+    batch_size: 16 #возможно поменять (см сообщение снизу)
     shuffle: True
   test:
-    batch_size: 16 #возможно поменять
+    batch_size: 16 #возможно поменять (см сообщение снизу)
     shuffle: False
 
 model:
@@ -50,8 +50,8 @@ model:
 
   CondStageParams:
     n_stages: 2
-    in_channels: 3
-    out_channels: 3
+    in_channels: 1
+    out_channels: 1
 
   BB:
     optimizer:
@@ -86,9 +86,9 @@ model:
 
       UNetParams:
         image_size: 250
-        in_channels: 6
+        in_channels: 2
         model_channels: 128
-        out_channels: 3
+        out_channels: 1
         num_res_blocks: 2
         attention_resolutions: !!python/tuple
           - 32
