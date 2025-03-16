@@ -9,7 +9,7 @@ log_dir="../../logs/hdf5"
 
 mkdir -p "$out_dir" "$log_dir"
 
-for which in "train" "valid" "test"
+for which in "train" "val" "test"
 do
     if [ -d "${data_dir}/${which}" ]; then
         for plane in "axial"

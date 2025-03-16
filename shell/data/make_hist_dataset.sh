@@ -9,7 +9,7 @@ log_dir="../../logs/hist"
 
 mkdir -p "$out_dir" "$log_dir"
 
-for which in "train" "valid" "test"
+for which in "train" "val" "test"
 do
     for plane in "axial"
     do
