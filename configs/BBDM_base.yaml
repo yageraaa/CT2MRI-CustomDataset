@@ -16,7 +16,7 @@ data:
   dataset_name: 'ct2mr'
   dataset_type: 'ct2mr_aligned_global_hist_context'
   dataset_config:
-    dataset_path: "../" #поменять
+    dataset_path: "../../processed_data"
     hist_type: "colin"
     plane: 'axial'
     image_size: 250
@@ -24,17 +24,17 @@ data:
     to_normal: True
     flip: True
   train:
-    batch_size: 16 #возможно поменять (см сообщение снизу)
+    batch_size: 16
     shuffle: True
   val:
-    batch_size: 16 #возможно поменять (см сообщение снизу)
+    batch_size: 16
     shuffle: True
   test:
-    batch_size: 16 #возможно поменять (см сообщение снизу)
+    batch_size: 16
     shuffle: False
 
 model:
-  model_name: "${date}_${HW}_BBDM_${plane}_DDIM" # part of result path
+  model_name: "${date}_${HW}_BBDM_${plane}_DDIM"
   model_type: "BBDM" # LBBDM
   latent_before_quant_conv: False
   normalize_latent: False
