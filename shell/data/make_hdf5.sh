@@ -24,9 +24,9 @@ do
                 --data_csv "" \
                 --CT_name "$CT_name" \
                 --MR_name "$MR_name" \
-                > "${log_dir}/${HW}_${which}_${plane}.log"
+                > "${log_dir}/${HW}_${which}_${plane}.log" 2>&1
         done
     else
-        echo "Skipping ${which} set: directory not found."
+        echo "[WARNING] Skipping ${which} set: directory ${data_dir}/${which} not found."
     fi
 done
