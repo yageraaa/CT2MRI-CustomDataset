@@ -33,13 +33,11 @@ data/
             mr.nii.gz
         ...
 ```
-### Before Generation HDF5 Files and Hist Dataset :
-* Check `shell/data/make_hdf5.sh` and `shell/data/make_hist_dataset.sh` :
+## Selecting a directory to run scripts:
 ```commandline
-HW=250               # Match your data size  
-CT_name="ct.nii.gz"  # Verify file name and extension 
-MR_name="mr.nii.gz"  # Verify file name and extension                                                
-```
+cd yourpathtotheprojectfolder/CT2MRI-CustomDataset
+```                                             
+
 ### Generate HDF5 Files :
 ```commandline
 sh shell/data/make_hdf5.sh
@@ -53,14 +51,6 @@ sh shell/data/make_hist_dataset.sh
 
 ## Training
 
-### Verify Config :
-* Check `configs/BBDM_base.yaml` :
-```yaml
-data:
-  dataset_config:
-    dataset_path: "../../processed_data"  # Path to HDF5 files 
-    image_size: 250                       # Match your data size                          
-```
 ### Start Training :
 ```commandline
 sh shell/train/train.sh
@@ -68,11 +58,6 @@ sh shell/train/train.sh
 
 ## Testing
 
-* Check `test.sh`:
-```commandline
-HW=250               # Match your data size
-test_epoch="34"      # Update with your best checkpoint                                        
-```
 ### Start Testing :
 ```commandline
 sh shell/test/test.sh
