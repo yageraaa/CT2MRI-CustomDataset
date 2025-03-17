@@ -80,15 +80,10 @@ def transpose_LPS_to_ITKSNAP_position(np_data, plane):
 def create_hdf5_dataset(args):
     start_d = time.time()
 
-    df = pd.read_csv(args.data_csv, index_col='pid')
-    # subject_dir = df[df['set'] in args.which_set].index.tolist()
-    
-    # excepted
-    dataset_info = pd.read_csv('/root_dir/datasets/dataset.csv')
-    df = df[~df.index.isin(dataset_info.loc[dataset_info['except'] == 1, 'pid'])]
-    # df.to_csv('/root_dir/datasets/dataset_split_info.csv')
-    
-    subject_dir = df[df['set'].str.contains(args.which_set)].index.tolist()
+    subject_dir = [os.path.join(args.data_dir, d) for d in os.listdir(args.data_dir)
+                   if os.path.isdir(os.path.join(args.data_dir, d))]
+    print(f"Found {len(subject_dir)} subjects in {args.data_dir}.")
+
     subject_dir = [os.path.join(args.data_dir, f"{pid}") for pid in subject_dir]
     print(f"data size: {len(subject_dir)}")
         
@@ -154,22 +149,16 @@ def create_hdf5_dataset(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='HDF5-Creation')
-
-    parser.add_argument('--hdf5_name', type=str, default="testsuite_2.hdf5",
-                        help='path and name of hdf5-dataset (default: testsuite_2.hdf5)')
+    parser.add_argument('--hdf5_name', type=str, default="processed_data/250_train_axial.hdf5",
+                        help='Path and name of HDF5 file (default: processed_data/250_train_axial.hdf5)')
     parser.add_argument('--plane', type=str, default="axial", choices=["axial", "coronal", "sagittal"],
-                        help="Which plane to put into file (axial (default), coronal or sagittal)")
-    parser.add_argument('--which_set', type=str)
-    parser.add_argument("--debugging", action='store_true')
-    parser.add_argument('--data_csv', type=str)
-    parser.add_argument('--pattern', type=str, default="*", help="Pattern to match files in directory.")
-    parser.add_argument('--height', type=int, default=128, help='Height of Image (Default 128)')
-    parser.add_argument('--width', type=int, default=128, help='Width of Image (Default 128)')
-    parser.add_argument('--data_dir', type=str, default="/testsuite", help="Directory with images to load")
-    parser.add_argument('--CT_name', type=str)
-    parser.add_argument('--MR_name', type=str)
+                        help="Plane to process (default: axial)")
+    parser.add_argument('--which_set', type=str, required=True, help="Dataset type (train, val, test)")
+    parser.add_argument('--height', type=int, default=250, help='Height of image (default: 250)')
+    parser.add_argument('--width', type=int, default=250, help='Width of image (default: 250)')
+    parser.add_argument('--data_dir', type=str, required=True, help="Directory with images to load")
+    parser.add_argument('--CT_name', type=str, default="ct.nii.gz", help="Name of CT file (default: ct.nii.gz)")
+    parser.add_argument('--MR_name', type=str, default="mr.nii.gz", help="Name of MRI file (default: mr.nii.gz)")
 
     args = parser.parse_args()
-
-    print(args)
     create_hdf5_dataset(args)

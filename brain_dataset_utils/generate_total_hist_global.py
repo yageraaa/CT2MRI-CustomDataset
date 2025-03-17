@@ -36,7 +36,8 @@ def create_hdf5_dataset(args):
     start_d = time.time()
     visualize = True
     scale = 10
-    df = pd.read_csv(args.data_csv, index_col='pid')
+    subject_dir = [os.path.join(args.data_dir, d) for d in os.listdir(args.data_dir)
+                   if os.path.isdir(os.path.join(args.data_dir, d))]
     
     subject_dir = df[df['set'].str.contains(args.which_set)].index.tolist()
     subject_dir = [os.path.join(args.data_dir, f"{pid}") for pid in subject_dir]
@@ -104,100 +105,72 @@ def create_hdf5_dataset(args):
 
 def create_hdf5_dataset_avg(args):
     num_bins = 128
-    epsilon = 0.0000001
     modal = 'MR'
     start_d = time.time()
     visualize = False
     scale = 10
-    df = pd.read_csv(args.data_csv, index_col='pid')
-    
-    subject_dir = df[df['set'].str.contains(args.which_set)].index.tolist()
-    subject_dir = [os.path.join(args.data_dir, f"{pid}") for pid in subject_dir]
+
+    subject_dir = [os.path.join(args.data_dir, d) for d in os.listdir(args.data_dir)
+                   if os.path.isdir(os.path.join(args.data_dir, d))]
     print(f"data size: {len(subject_dir)}")
-    
-    train_df = df[df['set'] == 'train']
-    
-    train_subject_dir = train_df.index.tolist()
+
+    train_dir = os.path.join(os.path.dirname(args.data_dir), "train")
+    train_subject_dir = [os.path.join(train_dir, d) for d in os.listdir(train_dir)
+                         if os.path.isdir(os.path.join(train_dir, d))]
     print(f"train data size: {len(train_subject_dir)}")
-    train_subject_dir = [os.path.join(args.data_dir, f"{pid}") for pid in train_subject_dir]
-    print(f"data size: {len(train_subject_dir)}")
-    
+
     normalized_list = []
     cum_hist_list = []
     hist_diff_list = []
+
     for idx, current_subject in enumerate(train_subject_dir):
         start = time.time()
 
         if not os.path.isdir(current_subject):
             continue
-        sub_name = current_subject.split("/")[-1]
-        print("Volume Nr: {} Processing Data from {}/{}".format(idx, current_subject, args.MR_name))
 
-        if modal == 'MR':
-            MR_data = nib.load(os.path.join(current_subject, args.MR_name))
-        else:
-            MR_data = nib.load(os.path.join(current_subject, args.CT_name))
-        MR_data = np.asanyarray(MR_data.dataobj)
+        sub_name = os.path.basename(current_subject)
+        print(f"Processing {idx + 1}/{len(train_subject_dir)}: {current_subject}")
+
+        MR_data = nib.load(os.path.join(current_subject, args.MR_name)).get_fdata()
         MR_data = np.nan_to_num(MR_data)
 
         MR_data = transpose_LPS_to_ITKSNAP_position(MR_data, args.plane)
 
-        # calculate histogram
         histograms, _ = np.histogram(MR_data, bins=num_bins, range=(0.001, 1))
         normalized_histograms = histograms / histograms.sum(keepdims=True)
         normalized_histograms *= scale
-        fig_out_path = f'/root_dir/datasets/{modal}_hists_global_ver3/{sub_name}.png'
-        if visualize:
-            visualize_histogram(normalized_histograms, num_bins, fig_out_path)
         normalized_list.append(normalized_histograms)
-        
+
         cum_hist = np.cumsum(normalized_histograms)
-        fig_out_path = f'/root_dir/datasets/{modal}_hists_global_ver3/{sub_name}_cum.png'
-        if visualize:
-            visualize_histogram(cum_hist, num_bins, fig_out_path)
         cum_hist_list.append(cum_hist)
 
         hist_diff = np.diff(normalized_histograms)
         hist_diff = np.insert(hist_diff, 0, hist_diff[0])
         hist_diff *= scale
-        fig_out_path = f'/root_dir/datasets/{modal}_hists_global_ver3/{sub_name}_diff.png'
-        if visualize:
-            visualize_histogram(hist_diff, num_bins, fig_out_path)
         hist_diff_list.append(hist_diff)
-        
-        print(f"{current_subject} finished successfully.")
-        
+
+        print(f"{current_subject} processed successfully.")
+
     normalized_histograms_avg = np.mean(normalized_list, axis=0)
     cum_hist_avg = np.mean(cum_hist_list, axis=0)
     hist_diff_avg = np.mean(hist_diff_list, axis=0)
-    
+
     hist_dataset = {}
     for idx, current_subject in enumerate(subject_dir):
-        normalized_avg = normalized_histograms_avg
-        cum_avg = cum_hist_avg
-        diff_avg = hist_diff_avg
-        
-        combined_histogram = np.stack((normalized_avg, cum_avg, diff_avg), axis=1)
-        combined_histogram = np.expand_dims(combined_histogram, axis=-1) # num_bins, 3, 1
-        
-        sub_name = current_subject.split("/")[-1]
-        
+        combined_histogram = np.stack((normalized_histograms_avg, cum_hist_avg, hist_diff_avg), axis=1)
+        combined_histogram = np.expand_dims(combined_histogram, axis=-1)  # num_bins, 3, 1
+
+        sub_name = os.path.basename(current_subject)
         hist_dataset[sub_name] = combined_histogram
-        print(combined_histogram.shape)
-        end = time.time() - start
+        print(f"Processed {sub_name}: {combined_histogram.shape}")
 
-        print("Volume: {} Finished Data Reading and Appending in {:.3f} seconds.".format(idx, end))
-
-        if args.debugging and idx == 2:
-            break
-
-    # # Write the hdf5 file
     with open(args.pkl_name, 'wb') as f:
         pickle.dump(hist_dataset, f)
 
     end_d = time.time() - start_d
-    print("Successfully written {} in {:.3f} seconds.".format(args.pkl_name, end_d))
-    print(len(hist_dataset.keys()))
+    print(f"Successfully written {args.pkl_name} in {end_d:.3f} seconds.")
+    print(f"Total subjects processed: {len(hist_dataset)}")
 
 def create_hdf5_dataset_colin(args):
     num_bins = 128
@@ -206,7 +179,8 @@ def create_hdf5_dataset_colin(args):
     start_d = time.time()
     visualize = False
     scale = 10
-    df = pd.read_csv(args.data_csv, index_col='pid')
+    subject_dir = [os.path.join(args.data_dir, d) for d in os.listdir(args.data_dir)
+                   if os.path.isdir(os.path.join(args.data_dir, d))]
     
     subject_dir = df[df['set'].str.contains(args.which_set)].index.tolist()
     subject_dir = [os.path.join(args.data_dir, f"{pid}") for pid in subject_dir]
