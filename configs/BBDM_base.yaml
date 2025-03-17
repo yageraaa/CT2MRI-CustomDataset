@@ -24,13 +24,13 @@ data:
     to_normal: True
     flip: True
   train:
-    batch_size: 16
+    batch_size: 8
     shuffle: True
   val:
-    batch_size: 16
+    batch_size: 8
     shuffle: True
   test:
-    batch_size: 16
+    batch_size: 8
     shuffle: False
 
 model:
@@ -96,8 +96,8 @@ model:
           - 8
         channel_mult: !!python/tuple
           - 1
+          - 2
           - 4
-          - 8
         conv_resample: True
         dims: 2
         num_heads: 8
