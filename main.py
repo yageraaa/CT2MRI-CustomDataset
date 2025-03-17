@@ -5,6 +5,9 @@ import copy
 import torch
 import random
 import numpy as np
+import Register
+from datasets import custom
+import h5py
 
 from utils import dict2namespace, get_runner, namespace2dict
 import torch.multiprocessing as mp
@@ -98,10 +101,9 @@ def parse_args_and_config():
         namespace_config.model.BB.params.ISTA_step_size = args.ISTA_step_size
     if args.num_ISTA_step is not None:
         namespace_config.model.BB.params.num_ISTA_step = args.num_ISTA_step
-        
-    if args.sample_to_eval:
-        if args.dataset_type != '':
-            namespace_config.data.dataset_type = args.dataset_type
+
+    if args.dataset_type != '':
+        namespace_config.data.dataset_type = args.dataset_type
 
     dict_config = namespace2dict(namespace_config)
     
@@ -180,11 +182,18 @@ def DDP_launcher(world_size, run_fn, config):
 
 
 def main():
+    with h5py.File("./processed_data/250_train_axial.hdf5", "r") as hf:
+        print("Keys in HDF5 file:", list(hf.keys()))
+        print("MR dataset shape:", hf['MR_dataset'].shape)
+        print("CT dataset shape:", hf['CT_dataset'].shape)
+        print("Index dataset shape:", hf['index_dataset'].shape)
+        print("Subjects shape:", hf['subject'].shape)
+
     nconfig, dconfig = parse_args_and_config()
     args = nconfig.args
 
     gpu_ids = args.gpu_ids
-    if gpu_ids == "-1": # Use CPU
+    if gpu_ids == "-1":
         nconfig.training.use_DDP = False
         nconfig.training.device = [torch.device("cpu")]
         CPU_singleGPU_launcher(nconfig)

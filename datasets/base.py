@@ -4,7 +4,8 @@ from albumentations.pytorch import ToTensorV2
 import numpy as np
 
 class multi_ch_nifti_default_Dataset(Dataset):
-    def __init__(self, image_dataset, index_dataset, subjects, radius, image_size=(250, 250), flip=False, to_normal=False):
+    def __init__(self, image_dataset, index_dataset, subjects, radius, image_size=(250, 250), flip=False,
+                 to_normal=False):
         self.image_size = image_size
         self.images = image_dataset
         self.indice = index_dataset
@@ -12,9 +13,14 @@ class multi_ch_nifti_default_Dataset(Dataset):
 
         self.radius = radius
 
+        print("Shape of images:", self.images.shape)  # Отладочный вывод
+        print("Shape of indices:", self.indice.shape)  # Отладочный вывод
+        print("Shape of subjects:", self.subjects.shape)  # Отладочный вывод
+
         self._length = self.images.shape[2]
         self.flip = flip
-        self.to_normal = to_normal # to [-1, 1]
+        self.to_normal = to_normal
+
 
     def __len__(self):
         if self.flip:
@@ -51,6 +57,7 @@ class multi_ch_nifti_default_Dataset(Dataset):
             image.clamp_(-1., 1.)
 
         return image, self.subjects[index]
+        print(f"Image shape before transform: {image.shape}")
 
     def get_subject_names(self):
         return self.subjects

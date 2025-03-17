@@ -48,21 +48,23 @@ def transform_sagittal(vol, coronal2sagittal=True):
 
 
 def filter_blank_slices_thick(CT_data, MR_data, threshold=50):
-
     # Get indices of all slices with more than threshold labels/pixels
     binaray_label = np.where(CT_data > 1e-15, 1, 0)
     select_slices = (np.sum(binaray_label, axis=(0, 1)) > threshold)
 
+    # Если нет подходящих срезов, вернуть исходные данные с предупреждением
+    if np.sum(select_slices) == 0:
+        print("WARNING: All slices filtered out! Returning original data.")
+        return CT_data, MR_data
+
     # Retain only slices with more than threshold labels/pixels
     CT_data = CT_data[:, :, select_slices]
     MR_data = MR_data[:, :, select_slices]
-    print(CT_data.shape)
-    # print(select_slices)
-    
-    true_indices = np.where(select_slices == True)[0]
+
+    true_indices = np.where(select_slices)[0]
     first_true_index = true_indices[0] if true_indices.size > 0 else None
     last_true_index = true_indices[-1] if true_indices.size > 0 else None
-    print(f"{first_true_index} ~ {last_true_index}")
+    print(f"Retained slices: {first_true_index} ~ {last_true_index} ({len(true_indices)} slices)")
     return CT_data, MR_data
 
 
@@ -77,6 +79,7 @@ def transpose_LPS_to_ITKSNAP_position(np_data, plane):
         np_data = np.transpose(np_data, [1, 2, 0])
     return np_data
 
+
 def create_hdf5_dataset(args):
     start_d = time.time()
 
@@ -84,9 +87,10 @@ def create_hdf5_dataset(args):
                    if os.path.isdir(os.path.join(args.data_dir, d))]
     print(f"Found {len(subject_dir)} subjects in {args.data_dir}.")
 
-    subject_dir = [os.path.join(args.data_dir, f"{pid}") for pid in subject_dir]
+    subject_dir = [os.path.join(args.data_dir, d) for d in os.listdir(args.data_dir)
+                   if os.path.isdir(os.path.join(args.data_dir, d))]
     print(f"data size: {len(subject_dir)}")
-        
+
     CT_dataset = np.ndarray(shape=(args.height, args.width, 0), dtype=np.float32)
     MR_dataset = np.ndarray(shape=(args.height, args.width, 0), dtype=np.float32)
     index_dataset = np.ndarray(shape=(0), dtype=np.uint8)
@@ -98,7 +102,7 @@ def create_hdf5_dataset(args):
 
         if not os.path.isdir(current_subject):
             continue
-        
+
         print("Volume Nr: {} Processing Data from {}/{}".format(idx, current_subject, args.CT_name))
 
         CT_data = nib.load(os.path.join(current_subject, args.CT_name))
@@ -108,16 +112,21 @@ def create_hdf5_dataset(args):
         MR_data = np.asanyarray(MR_data.dataobj)
         MR_data = np.nan_to_num(MR_data)
 
+        print("CT data shape:", CT_data.shape)  # Отладочный вывод
+        print("MR data shape:", MR_data.shape)  # Отладочный вывод
+
         CT_data = transpose_LPS_to_ITKSNAP_position(CT_data, args.plane)
         MR_data = transpose_LPS_to_ITKSNAP_position(MR_data, args.plane)
+        print(f"After transpose - CT shape: {CT_data.shape}, MR shape: {MR_data.shape}")
 
         CT_data, MR_data = filter_blank_slices_thick(CT_data, MR_data, threshold=50)
-            
+
         # # Append finally processed images to arrays
         CT_dataset = np.append(CT_dataset, CT_data, axis=2)
         MR_dataset = np.append(MR_dataset, MR_data, axis=2)
         index_dataset = np.append(index_dataset, np.arange(CT_data.shape[2], dtype=np.uint8), axis=0)
-        max_index_dataset = np.append(max_index_dataset, np.full(CT_data.shape[2], CT_data.shape[2]-1, dtype=np.uint8), axis=0)
+        max_index_dataset = np.append(max_index_dataset,
+                                      np.full(CT_data.shape[2], CT_data.shape[2] - 1, dtype=np.uint8), axis=0)
         sub_name = current_subject.split("/")[-1]
         subjects.extend([sub_name.encode("ascii", "ignore")] * CT_data.shape[2])
         # subjects.append(sub_name.encode("ascii", "ignore"))
@@ -159,6 +168,7 @@ if __name__ == "__main__":
     parser.add_argument('--data_dir', type=str, required=True, help="Directory with images to load")
     parser.add_argument('--CT_name', type=str, default="ct.nii.gz", help="Name of CT file (default: ct.nii.gz)")
     parser.add_argument('--MR_name', type=str, default="mr.nii.gz", help="Name of MRI file (default: mr.nii.gz)")
+    parser.add_argument("--debugging", action='store_true', help="Enable debugging mode.")
 
     args = parser.parse_args()
     create_hdf5_dataset(args)

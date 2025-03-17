@@ -2,7 +2,6 @@ import logging
 import importlib
 import os
 
-
 class Register:
     def __init__(self, registry_name):
         self.dict = {}

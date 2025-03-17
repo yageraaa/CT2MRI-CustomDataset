@@ -16,11 +16,11 @@ data:
   dataset_name: 'ct2mr'
   dataset_type: 'ct2mr_aligned_global_hist_context'
   dataset_config:
-    dataset_path: "../../processed_data"
+    dataset_path: "./processed_data"
     hist_type: "colin"
     plane: 'axial'
     image_size: 250
-    channels: 3
+    channels: 1
     to_normal: True
     flip: True
   train:

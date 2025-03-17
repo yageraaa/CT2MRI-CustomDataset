@@ -59,13 +59,17 @@ def get_optimizer(optim_config, parameters):
         return NotImplementedError('Optimizer {} not understood.'.format(optim_config.optimizer))
 
 
+
 def get_dataset(data_config, test=False):
+    # В runners/utils.py, в функции get_dataset
+    print("Available datasets:", list(Registers.datasets.keys()))  # Отладочный вывод
     if test:
-        test_dataset = Registers.datasets[data_config.dataset_type](data_config.dataset_config, stage='test')
-        return test_dataset
-    train_dataset = Registers.datasets[data_config.dataset_type](data_config.dataset_config, stage='train')
-    val_dataset = Registers.datasets[data_config.dataset_type](data_config.dataset_config, stage='valid')
-    return train_dataset, val_dataset
+        dataset = Registers.datasets[data_config.dataset_type](data_config.dataset_config, stage='test')
+    else:
+        train_dataset = Registers.datasets[data_config.dataset_type](data_config.dataset_config, stage='train')
+        val_dataset = Registers.datasets[data_config.dataset_type](data_config.dataset_config, stage='val')
+        return train_dataset, val_dataset
+    return dataset
 
 
 @torch.no_grad()
