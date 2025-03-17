@@ -3,7 +3,7 @@
 HW=250
 CT_name="ct.nii.gz"
 MR_name="mr.nii.gz"
-data_dir="../../data"
+data_dir="../data"
 out_dir="../../processed_data"
 log_dir="../../logs/hdf5"
 
