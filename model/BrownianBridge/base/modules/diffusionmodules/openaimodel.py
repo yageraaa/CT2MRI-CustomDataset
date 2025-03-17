@@ -752,10 +752,8 @@ class UNetModel(nn.Module):
 
         for module in self.output_blocks:
             hspop = hs.pop()
-            # Добавляем отладочный вывод
             print("Shape of h:", h.shape)
             print("Shape of hspop:", hspop.shape)
-            # Исправляем размеры, если они не совпадают
             if h.shape[2:] != hspop.shape[2:]:
                 hspop = torch.nn.functional.interpolate(hspop, size=h.shape[2:], mode='bilinear', align_corners=False)
             h = th.cat([h, hspop], dim=1)

@@ -125,6 +125,15 @@ class BrownianBridgeModel(nn.Module):
         x_t, objective = self.q_sample(x0, y, t, noise)
         objective_recon = self.denoise_fn(x_t, timesteps=t, context=context)
 
+        from torch.nn.functional import interpolate
+
+        print("Shape of objective:", objective.shape)
+        print("Shape of objective_recon:", objective_recon.shape)
+
+        if objective.shape != objective_recon.shape:
+            objective_recon = interpolate(objective_recon, size=objective.shape[2:], mode='bilinear',
+                                          align_corners=False)
+
         if self.loss_type == 'l1':
             recloss = (objective - objective_recon).abs().mean()
         elif self.loss_type == 'l2':
@@ -160,6 +169,14 @@ class BrownianBridgeModel(nn.Module):
         )
 
     def predict_x0_from_objective(self, x_t, y, t, objective_recon):
+        if x_t.shape[-2:] != objective_recon.shape[-2:]:
+            objective_recon = F.interpolate(
+                objective_recon,
+                size=x_t.shape[-2:],
+                mode='bilinear',
+                align_corners=False
+            )
+
         if self.objective == 'grad':
             x0_recon = x_t - objective_recon
         elif self.objective == 'noise':
