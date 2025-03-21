@@ -61,8 +61,7 @@ def get_optimizer(optim_config, parameters):
 
 
 def get_dataset(data_config, test=False):
-    # В runners/utils.py, в функции get_dataset
-    print("Available datasets:", list(Registers.datasets.keys()))  # Отладочный вывод
+    print("Available datasets:", list(Registers.datasets.keys()))
     if test:
         dataset = Registers.datasets[data_config.dataset_type](data_config.dataset_config, stage='test')
     else:
@@ -89,7 +88,9 @@ def get_image_grid(batch, grid_size=4, to_normal=True):
     batch = batch.detach().clone()
     image_grid = make_grid(batch, nrow=grid_size)
     if to_normal:
-        image_grid = image_grid.mul_(0.5).add_(0.5).clamp_(0, 1.)
+        if batch.min() < -0.1 or batch.max() > 1.1:
+            image_grid = image_grid.mul_(0.5).add_(0.5)
+        image_grid = image_grid.clamp_(0, 1.)
     image_grid = image_grid.mul_(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
     return image_grid
 

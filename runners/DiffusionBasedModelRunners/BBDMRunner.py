@@ -212,45 +212,31 @@ class BBDMRunner(DiffusionBaseRunner):
             context = context[0:batch_size].to(self.config.training.device[0])
 
         grid_size = 4
-        sample = net.sample(x, x_cond, context=context, clip_denoised=self.config.testing.clip_denoised, config=self.config, device=self.config.training.device[0]).to('cpu')
-        image_grid = get_image_grid(sample, grid_size, to_normal=self.config.data.dataset_config.to_normal)
-        mid_slice_index = image_grid.shape[-1] // 2
-        image_grid = image_grid[:,:,mid_slice_index:mid_slice_index+1]
-        im = Image.fromarray(image_grid[:,:,0])
-        im.save(os.path.join(sample_path, 'skip_sample.png'))
+        sample = net.sample(x, x_cond, context=context, clip_denoised=self.config.testing.clip_denoised,
+                            config=self.config, device=self.config.training.device[0])
+
+        sample_grid = get_image_grid(sample, grid_size, to_normal=True)
+        cond_grid = get_image_grid(x_cond, grid_size, to_normal=True)
+        gt_grid = get_image_grid(x, grid_size, to_normal=True)
+
+        combined_grid = np.hstack([sample_grid, cond_grid, gt_grid])
+
+        combined_image = Image.fromarray(combined_grid)
+        combined_image.save(os.path.join(sample_path, 'combined_sample.png'))
+
         if stage != 'test':
-            self.writer.add_image(f'{stage}_skip_sample', image_grid, self.global_step, dataformats='HWC')
+            self.writer.add_image(f'{stage}_combined_sample', combined_grid, self.global_step, dataformats='HWC')
             try:
-                wandb.log({f'{stage}_skip_sample': [wandb.Image(image_grid, caption=f'{stage}_skip_sample')]}, step=self.global_step)
+                wandb.log({
+                    f"{stage}_combined_sample": wandb.Image(combined_image, caption=f"{stage}_combined_sample")
+                }, step=self.global_step)
             except:
-                print(f'Could not log {stage}_skip_sample to wandb')
-            
-        image_grid = get_image_grid(x_cond.to('cpu'), grid_size, to_normal=self.config.data.dataset_config.to_normal)
-        image_grid = image_grid[:,:,mid_slice_index:mid_slice_index+1]
-        im = Image.fromarray(image_grid[:,:,0])
-        im.save(os.path.join(sample_path, 'condition.png'))
-        if stage != 'test':
-            self.writer.add_image(f'{stage}_condition', image_grid, self.global_step, dataformats='HWC')
-            try:
-                wandb.log({f'{stage}_condition': [wandb.Image(image_grid, caption=f'{stage}_condition')]}, step=self.global_step)
-            except:
-                print(f'Could not log {stage}_condition to wandb')
-                
-        image_grid = get_image_grid(x.to('cpu'), grid_size, to_normal=self.config.data.dataset_config.to_normal)
-        image_grid = image_grid[:,:,mid_slice_index:mid_slice_index+1]
-        im = Image.fromarray(image_grid[:,:,0])
-        im.save(os.path.join(sample_path, 'ground_truth.png'))
-        if stage != 'test':
-            self.writer.add_image(f'{stage}_ground_truth', image_grid, self.global_step, dataformats='HWC')
-            try:
-                wandb.log({f'{stage}_ground_truth': [wandb.Image(image_grid, caption=f'{stage}_ground_truth')]}, step=self.global_step)
-            except:
-                print(f'Could not log {stage}_ground_truth to wandb')
+                print(f'Could not log {stage}_combined_sample to wandb')
 
     @torch.no_grad()
     def sample_to_eval(self, net, test_dataset, sample_path):
         start_time = time.time()
-        
+
         raw_data_dir = "/root_dir/datasets/raw_data_tight"
         if 'BraTS' in sample_path:
             raw_data_dir = "/root_dir/BraTS/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData"
@@ -266,22 +252,22 @@ class BBDMRunner(DiffusionBaseRunner):
         sample_path = os.path.join(sample_path, f"{inference_type}_{sample_step}")
         if 'ISTA' in inference_type:
             sample_path = os.path.join(sample_path, f"{inference_type}_{sample_step}_{ISTA_step_size}_{num_ISTA_step}")
-            
+
         if "colin" in dataset_type:
             sample_path += '_colin'
         elif "best" in dataset_type:
             sample_path += '_best_meanmax'
         elif "average" in dataset_type:
             sample_path += '_average'
-            
+
         print(f"sample_path: {sample_path}")
         os.makedirs(sample_path, exist_ok=True)
-        
+
         batch_dict = defaultdict(list)
         for idx in range(len(test_dataset)):
             pid = test_dataset[idx][0][1].decode('utf-8')
             batch_dict[pid].append(test_dataset[idx])
-        
+
         metrics_dict = defaultdict(dict)
         for pid in tqdm(batch_dict.keys()):
             out_path = os.path.join(sample_path, f'{pid}.nii')
@@ -296,25 +282,30 @@ class BBDMRunner(DiffusionBaseRunner):
             test_batch = default_collate(batch_dict[pid])
             (x, x_name), (x_cond, x_cond_name), *context = test_batch
             context = context[0] if context else None
-            x_cond = x_cond.to(self.config.training.device[0], non_blocking=True)            
+            x_cond = x_cond.to(self.config.training.device[0], non_blocking=True)
             if context is not None:
                 context = context.to(self.config.training.device[0], non_blocking=True)
 
-            sample = net.sample(x, x_cond, x_cond_name, context=context, clip_denoised=False, path=sample_path, save=False, config=self.config, device=self.config.training.device[0])
-            sample = sample[:, mid_slice].detach().clone().cpu().mul_(0.5).add_(0.5).clamp_(0, 1.)
-            
+            sample = net.sample(x, x_cond, x_cond_name, context=context, clip_denoised=False, path=sample_path,
+                                save=False, config=self.config, device=self.config.training.device[0])
+
+            sample = sample[:, mid_slice].detach().clone().cpu()
+            if sample.min() < -0.1 or sample.max() > 1.1:
+                sample = sample.mul_(0.5).add_(0.5)
+            sample = sample.clamp_(0, 1.)
+
             raw_image_path = os.path.join(raw_data_dir, pid, f"cropped_MR_preprocessed_{H}.nii")
             if 'BraTS' in sample_path:
                 raw_image_path = os.path.join(raw_data_dir, pid, f"cropped_{pid}-t1n_preprocessed.nii")
             syn_img, raw_img, pid = save_syn_image(sample, raw_image_path, out_path, pid)
             calcul_metrics(metrics_dict, pid, syn_img, raw_img)
-                    
+
         df = pd.DataFrame.from_dict(metrics_dict, orient='index')
         means = df.mean()
         df.loc['mean'] = means
-                
+
         df.to_csv(os.path.join(sample_path, 'results.csv'), index_label='pa_id')
-        
+
         results_file = os.path.join('/root_dir/code/results/test_results.csv')
         save_exp_result(results_file, self.config, means)
 

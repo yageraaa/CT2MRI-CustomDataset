@@ -6,7 +6,7 @@ config_name="BBDM_base.yaml"
 HW=250
 plane="axial"
 gpu_ids="0"
-batch=16
+batch=1
 ddim_eta=0.0
 dataset_type="ct2mr_aligned_global_hist_context"
 

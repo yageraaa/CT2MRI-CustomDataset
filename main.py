@@ -124,7 +124,7 @@ def parse_args_and_config():
                    }
     if not args.sample_to_eval:
         try:
-            wandb.init(project="BBDM_med", entity="", name=namespace_config.model.model_name, config=config_dict)
+            wandb.init(project="BBDM_med", entity="yageraaa-mtuci", name=namespace_config.model.model_name, config=config_dict)
         except:
             print('Could not init wandb')
     
