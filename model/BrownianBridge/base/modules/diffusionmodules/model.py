@@ -67,7 +67,7 @@ class Downsample(nn.Module):
                                         in_channels,
                                         kernel_size=3,
                                         stride=2,
-                                        padding=0)
+                                        padding=1)
 
     def forward(self, x):
         if self.with_conv:
@@ -116,7 +116,7 @@ class ResnetBlock(nn.Module):
                                                     out_channels,
                                                     kernel_size=1,
                                                     stride=1,
-                                                    padding=0)
+                                                    padding=1)
 
     def forward(self, x, temb):
         h = x
@@ -157,22 +157,22 @@ class AttnBlock(nn.Module):
                                  in_channels,
                                  kernel_size=1,
                                  stride=1,
-                                 padding=0)
+                                 padding=1)
         self.k = torch.nn.Conv2d(in_channels,
                                  in_channels,
                                  kernel_size=1,
                                  stride=1,
-                                 padding=0)
+                                 padding=1)
         self.v = torch.nn.Conv2d(in_channels,
                                  in_channels,
                                  kernel_size=1,
                                  stride=1,
-                                 padding=0)
+                                 padding=1)
         self.proj_out = torch.nn.Conv2d(in_channels,
                                         in_channels,
                                         kernel_size=1,
                                         stride=1,
-                                        padding=0)
+                                        padding=1)
 
 
     def forward(self, x):

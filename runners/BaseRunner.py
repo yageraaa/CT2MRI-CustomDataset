@@ -18,7 +18,13 @@ from tqdm.autonotebook import tqdm
 from runners.base.EMA import EMA
 from runners.utils import make_save_dirs, make_dir, get_dataset, remove_file
 
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from debug_utils import log_data_loader_samples
+
 import wandb
+
 
 class BaseRunner(ABC):
     def __init__(self, config):
@@ -40,12 +46,12 @@ class BaseRunner(ABC):
         # set log and save destination
         self.config.result = argparse.Namespace()
         self.config.result.image_path, \
-        self.config.result.ckpt_path, \
-        self.config.result.log_path, \
-        self.config.result.sample_path, \
-        self.config.result.sample_to_eval_path = make_save_dirs(self.config.args,
-                                                                prefix=self.config.data.dataset_name,
-                                                                suffix=self.config.model.model_name)
+            self.config.result.ckpt_path, \
+            self.config.result.log_path, \
+            self.config.result.sample_path, \
+            self.config.result.sample_to_eval_path = make_save_dirs(self.config.args,
+                                                                    prefix=self.config.data.dataset_name,
+                                                                    suffix=self.config.model.model_name)
 
         self.save_config()  # save configuration file
         self.writer = SummaryWriter(self.config.result.log_path)  # initialize SummaryWriter
@@ -68,7 +74,8 @@ class BaseRunner(ABC):
 
         # initialize DDP
         if self.config.training.use_DDP:
-            self.net = DDP(self.net, device_ids=[self.config.training.local_rank], output_device=self.config.training.local_rank)
+            self.net = DDP(self.net, device_ids=[self.config.training.local_rank],
+                           output_device=self.config.training.local_rank)
         else:
             self.net = self.net.to(self.config.training.device[0])
         # self.ema.reset_device(self.net)
@@ -77,7 +84,7 @@ class BaseRunner(ABC):
     def save_config(self):
         if self.config.args.sample_to_eval:
             return
-            
+
         backup_path = os.path.join(self.config.result.ckpt_path, 'config_backup.yaml')
         shutil.copyfile(self.config.args.config, backup_path)
 
@@ -122,7 +129,8 @@ class BaseRunner(ABC):
 
             # load optimizer and scheduler
             if self.config.args.train:
-                if self.config.model.__contains__('optim_sche_load_path') and self.config.model.optim_sche_load_path is not None:
+                if self.config.model.__contains__(
+                        'optim_sche_load_path') and self.config.model.optim_sche_load_path is not None:
                     optimizer_scheduler_states = torch.load(self.config.model.optim_sche_load_path, map_location='cpu')
                     for i in range(len(self.optimizer)):
                         self.optimizer[i].load_state_dict(optimizer_scheduler_states['optimizer'][i])
@@ -338,17 +346,45 @@ class BaseRunner(ABC):
         """
         pass
 
+    def log_random_samples_from_dataset(self, dataset, num_samples=2, stage='train'):
+        import random
+        import wandb
+
+        random_indices = random.sample(range(len(dataset)), num_samples)
+
+        for idx in random_indices:
+            sample = dataset[idx]
+            (x, x_name), (x_cond, x_cond_name), *context = sample
+            context = context[0] if context else None
+
+            x_np = x.cpu().numpy()
+            x_cond_np = x_cond.cpu().numpy()
+
+            try:
+                wandb.log({
+                    f"{stage}_dataset_sample_{idx}/x": wandb.Image(x_np, caption=f"x: {x_name}"),
+                    f"{stage}_dataset_sample_{idx}/x_cond": wandb.Image(x_cond_np, caption=f"x_cond: {x_cond_name}"),
+                })
+            except:
+                print(f"Could not log {stage} dataset sample {idx} to wandb")
+
     def train(self):
         print(self.__class__.__name__)
 
         train_dataset, val_dataset = get_dataset(self.config.data, test=False)
+
+        self.log_random_samples_from_dataset(train_dataset, num_samples=2, stage='train')
+        self.log_random_samples_from_dataset(val_dataset, num_samples=2, stage='val')
+
+        log_data_loader_samples(train_dataset, num_samples=3, output_dir="debug/dataloader_samples/train")
+        log_data_loader_samples(val_dataset, num_samples=3, output_dir="debug/dataloader_samples/val")
+
         train_sampler = None
         val_sampler = None
-        # test_sampler = None
+
         if self.config.training.use_DDP:
             train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
             val_sampler = torch.utils.data.distributed.DistributedSampler(val_dataset)
-            # test_sampler = torch.utils.data.distributed.DistributedSampler(test_dataset)
             train_loader = DataLoader(train_dataset,
                                       batch_size=self.config.data.train.batch_size,
                                       num_workers=1,
@@ -359,11 +395,6 @@ class BaseRunner(ABC):
                                     num_workers=1,
                                     drop_last=True,
                                     sampler=val_sampler)
-            # test_loader = DataLoader(test_dataset,
-            #                          batch_size=self.config.data.test.batch_size,
-            #                          num_workers=1,
-            #                          drop_last=True,
-            #                          sampler=test_sampler)
         else:
             train_loader = DataLoader(train_dataset,
                                       batch_size=self.config.data.train.batch_size,
@@ -375,11 +406,6 @@ class BaseRunner(ABC):
                                     shuffle=self.config.data.val.shuffle,
                                     num_workers=1,
                                     drop_last=False)
-            # test_loader = DataLoader(test_dataset,
-            #                          batch_size=self.config.data.test.batch_size,
-            #                          shuffle=False,
-            #                          num_workers=1,
-            #                          drop_last=False)
 
         epoch_length = len(train_loader)
         start_epoch = self.global_epoch
@@ -403,9 +429,28 @@ class BaseRunner(ABC):
                     self.global_step += 1
                     self.net.train()
 
+                    if self.global_step == 1:
+                        (x, x_name), (x_cond, x_cond_name), *context = train_batch
+                        context = context[0] if context else None
+
+                        print(f"Train batch - x shape: {x.shape}, x range: [{x.min()}, {x.max()}]")
+                        print(
+                            f"Train batch - x_cond shape: {x_cond.shape}, x_cond range: [{x_cond.min()}, {x_cond.max()}]")
+                        if context is not None:
+                            print(
+                                f"Train batch - context shape: {context.shape}, context range: [{context.min()}, {context.max()}]")
+
+                        try:
+                            wandb.log({
+                                "train_batch/x": wandb.Image(x[0].cpu().numpy(), caption=f"x: {x_name[0]}"),
+                                "train_batch/x_cond": wandb.Image(x_cond[0].cpu().numpy(),
+                                                                  caption=f"x_cond: {x_cond_name[0]}"),
+                            }, step=self.global_step)
+                        except:
+                            print("Could not log train batch to wandb")
+
                     losses = []
                     for i in range(len(self.optimizer)):
-                        # pdb.set_trace()
                         loss = self.loss_fn(net=self.net,
                                             batch=train_batch,
                                             epoch=epoch,
@@ -421,7 +466,7 @@ class BaseRunner(ABC):
                                 self.scheduler[i].step(loss)
                         losses.append(loss.detach().mean())
 
-                    if self.use_ema and self.global_step % (self.update_ema_interval*accumulate_grad_batches) == 0:
+                    if self.use_ema and self.global_step % (self.update_ema_interval * accumulate_grad_batches) == 0:
                         self.step_ema()
 
                     if len(self.optimizer) > 1:
@@ -445,9 +490,6 @@ class BaseRunner(ABC):
                             self.validation_step(val_batch=val_batch, epoch=epoch, step=self.global_step)
 
                         if self.global_step % int(self.config.training.sample_interval * epoch_length) == 0:
-                            # val_batch = next(iter(val_loader))
-                            # self.validation_step(val_batch=val_batch, epoch=epoch, step=self.global_step)
-
                             if not self.config.training.use_DDP or \
                                     (self.config.training.use_DDP and self.config.training.local_rank) == 0:
                                 val_batch = next(iter(val_loader))
@@ -455,7 +497,7 @@ class BaseRunner(ABC):
                                 torch.cuda.empty_cache()
 
                 end_time = time.time()
-                elapsed_rounded = int(round((end_time-start_time)))
+                elapsed_rounded = int(round((end_time - start_time)))
                 print("training time: " + str(datetime.timedelta(seconds=elapsed_rounded)))
 
                 # validation
@@ -524,7 +566,8 @@ class BaseRunner(ABC):
                                         remove_file(os.path.join(self.config.result.ckpt_path,
                                                                  self.topk_checkpoints[top_key]['model_ckpt_name']))
                                         remove_file(os.path.join(self.config.result.ckpt_path,
-                                                                 self.topk_checkpoints[top_key]['optim_sche_ckpt_name']))
+                                                                 self.topk_checkpoints[top_key][
+                                                                     'optim_sche_ckpt_name']))
 
                                         print(
                                             f"saving top checkpoint: average_loss={average_loss} epoch={epoch + 1}")
@@ -537,8 +580,10 @@ class BaseRunner(ABC):
                                                    os.path.join(self.config.result.ckpt_path, model_ckpt_name))
                                         torch.save(optimizer_scheduler_states,
                                                    os.path.join(self.config.result.ckpt_path, optim_sche_ckpt_name))
+                                        torch.cuda.empty_cache()
         except BaseException as e:
-            if not self.config.training.use_DDP or (self.config.training.use_DDP and self.config.training.local_rank) == 0:
+            if not self.config.training.use_DDP or (
+                    self.config.training.use_DDP and self.config.training.local_rank) == 0:
                 print("exception save model start....")
                 print(self.__class__.__name__)
                 model_states, optimizer_scheduler_states = self.get_checkpoint_states(stage='exception')
@@ -555,12 +600,17 @@ class BaseRunner(ABC):
             print('traceback.print_exc():')
             traceback.print_exc()
             print('traceback.format_exc():\n%s' % traceback.format_exc())
+            torch.cuda.empty_cache()
 
-        try: 
+        try:
             wandb.finish()
         except:
             print('Could not finish wandb')
-        
+
+        torch.cuda.empty_cache()
+
+    torch.cuda.empty_cache()
+
     @torch.no_grad()
     def test(self):
         test_dataset = get_dataset(self.config.data, test=True)
@@ -601,7 +651,9 @@ class BaseRunner(ABC):
                 else:
                     self.sample(self.net, test_batch, sample_path, stage='test')
 
-        try: 
+        try:
             wandb.finish()
         except:
             print('Could not finish wandb')
+
+        torch.cuda.empty_cache()

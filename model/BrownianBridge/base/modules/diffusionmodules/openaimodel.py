@@ -941,6 +941,7 @@ class EncoderUNetModel(nn.Module):
                 normalization(2048),
                 nn.SiLU(),
                 nn.Linear(2048, self.out_channels),
+                nn.Sigmoid()
             )
         else:
             raise NotImplementedError(f"Unexpected {pool} pooling")

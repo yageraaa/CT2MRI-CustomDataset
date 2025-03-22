@@ -3,7 +3,7 @@ import numpy as np
 import torch.optim.lr_scheduler
 from torch.utils.data import DataLoader
 from torch.utils.data.dataloader import default_collate
-
+import matplotlib.pyplot as plt
 from PIL import Image
 from tqdm.autonotebook import tqdm
 from Register import Registers
@@ -18,6 +18,7 @@ import pandas as pd
 
 import time
 import wandb
+
 
 @Registers.runners.register_with_name('BBDMRunner')
 class BBDMRunner(DiffusionBaseRunner):
@@ -69,7 +70,7 @@ class BBDMRunner(DiffusionBaseRunner):
                                                                verbose=True,
                                                                threshold_mode='rel',
                                                                **vars(config.model.BB.lr_scheduler)
-)
+                                                               )
         return [optimizer], [scheduler]
 
     @torch.no_grad()
@@ -103,7 +104,7 @@ class BBDMRunner(DiffusionBaseRunner):
         max_batch_num = 30000 // self.config.data.train.batch_size
 
         def calc_mean(batch, total_ori_mean=None, total_cond_mean=None):
-            (x, x_name), (x_cond, x_cond_name), *context= batch
+            (x, x_name), (x_cond, x_cond_name), *context = batch
             context = context[0] if context else None
 
             x = x.to(self.config.training.device[0])
@@ -119,9 +120,9 @@ class BBDMRunner(DiffusionBaseRunner):
             return total_ori_mean, total_cond_mean
 
         def calc_var(batch, ori_latent_mean=None, cond_latent_mean=None, total_ori_var=None, total_cond_var=None):
-            (x, x_name), (x_cond, x_cond_name), *context= batch
+            (x, x_name), (x_cond, x_cond_name), *context = batch
             context = context[0] if context else None
-            
+
             x = x.to(self.config.training.device[0])
             x_cond = x_cond.to(self.config.training.device[0])
 
@@ -187,8 +188,8 @@ class BBDMRunner(DiffusionBaseRunner):
                 try:
                     wandb.log({f"recloss_noise/{stage}": additional_info["recloss_noise"]}, step=step)
                 except:
-                    print(f'Could not log recloss_noise to wandb')   
-                        
+                    print(f'Could not log recloss_noise to wandb')
+
             if additional_info.__contains__('recloss_xy'):
                 self.writer.add_scalar(f'recloss_xy/{stage}', additional_info['recloss_xy'], step)
                 try:
@@ -208,30 +209,74 @@ class BBDMRunner(DiffusionBaseRunner):
 
         x = x[0:batch_size].to(self.config.training.device[0])
         x_cond = x_cond[0:batch_size].to(self.config.training.device[0])
+
+        try:
+            wandb.log({
+                f"{stage}_skip_sample_hist": wandb.Histogram(sample.cpu().numpy()),
+                f"{stage}_condition_hist": wandb.Histogram(x_cond.cpu().numpy())
+            }, step=self.global_step)
+        except Exception as e:
+            print(f"Histogramms ERROR: {e}")
+
         if context is not None:
             context = context[0:batch_size].to(self.config.training.device[0])
 
         grid_size = 4
+
+        print(f"Skip Sample values before processing: min={x.min()}, max={x.max()}")
         sample = net.sample(x, x_cond, context=context, clip_denoised=self.config.testing.clip_denoised,
-                            config=self.config, device=self.config.training.device[0])
-
-        sample_grid = get_image_grid(sample, grid_size, to_normal=True)
-        cond_grid = get_image_grid(x_cond, grid_size, to_normal=True)
-        gt_grid = get_image_grid(x, grid_size, to_normal=True)
-
-        combined_grid = np.hstack([sample_grid, cond_grid, gt_grid])
-
-        combined_image = Image.fromarray(combined_grid)
-        combined_image.save(os.path.join(sample_path, 'combined_sample.png'))
-
+                            config=self.config, device=self.config.training.device[0]).to('cpu')
+        image_grid = get_image_grid(sample, grid_size, to_normal=False)
+        mid_slice_index = image_grid.shape[-1] // 2
+        image_grid = image_grid[:, :, mid_slice_index:mid_slice_index + 1]
+        im = Image.fromarray(image_grid[:, :, 0])
+        im.save(os.path.join(sample_path, 'skip_sample.png'))
         if stage != 'test':
-            self.writer.add_image(f'{stage}_combined_sample', combined_grid, self.global_step, dataformats='HWC')
+            self.writer.add_image(f'{stage}_skip_sample', image_grid, self.global_step, dataformats='HWC')
             try:
-                wandb.log({
-                    f"{stage}_combined_sample": wandb.Image(combined_image, caption=f"{stage}_combined_sample")
-                }, step=self.global_step)
+                wandb.log({f'{stage}_skip_sample': [wandb.Image(image_grid, caption=f'{stage}_skip_sample')]},
+                          step=self.global_step)
             except:
-                print(f'Could not log {stage}_combined_sample to wandb')
+                print(f'Could not log {stage}_skip_sample to wandb')
+
+        print(f"Condition values before processing: min={x_cond.min()}, max={x_cond.max()}")
+        image_grid = get_image_grid(x_cond.to('cpu'), grid_size, to_normal=False)
+        image_grid = image_grid[:, :, mid_slice_index:mid_slice_index + 1]
+        im = Image.fromarray(image_grid[:, :, 0])
+        im.save(os.path.join(sample_path, 'condition.png'))
+        if stage != 'test':
+            self.writer.add_image(f'{stage}_condition', image_grid, self.global_step, dataformats='HWC')
+            try:
+                wandb.log({f'{stage}_condition': [wandb.Image(image_grid, caption=f'{stage}_condition')]},
+                          step=self.global_step)
+            except:
+                print(f'Could not log {stage}_condition to wandb')
+
+        print(f"Ground Truth values before processing: min={x.min()}, max={x.max()}")
+        image_grid = get_image_grid(x.to('cpu'), grid_size, to_normal=False)
+        image_grid = image_grid[:, :, mid_slice_index:mid_slice_index + 1]
+        im = Image.fromarray(image_grid[:, :, 0])
+        im.save(os.path.join(sample_path, 'ground_truth.png'))
+        if stage != 'test':
+            self.writer.add_image(f'{stage}_ground_truth', image_grid, self.global_step, dataformats='HWC')
+            try:
+                wandb.log({f'{stage}_ground_truth': [wandb.Image(image_grid, caption=f'{stage}_ground_truth')]},
+                          step=self.global_step)
+            except:
+                print(f'Could not log {stage}_ground_truth to wandb')
+
+        # В BBDMRunner.sample
+        plt.figure(figsize=(20, 10))
+        plt.subplot(1, 4, 1);
+        plt.imshow(sample[0, 0].cpu().numpy(), cmap='gray');
+        plt.title('Generated')
+        plt.subplot(1, 4, 2);
+        plt.imshow(x_cond[0, 0].cpu().numpy(), cmap='gray');
+        plt.title('Condition')
+        plt.subplot(1, 4, 3);
+        plt.imshow(x[0, 0].cpu().numpy(), cmap='gray');
+        plt.title('Ground Truth')
+        plt.savefig(os.path.join(sample_path, 'debug_compare.png'))
 
     @torch.no_grad()
     def sample_to_eval(self, net, test_dataset, sample_path):
@@ -311,4 +356,3 @@ class BBDMRunner(DiffusionBaseRunner):
 
         end_time = time.time()
         print_runtime(start_time, end_time)
-        

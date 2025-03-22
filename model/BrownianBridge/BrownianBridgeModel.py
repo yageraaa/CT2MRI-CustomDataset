@@ -6,10 +6,11 @@ from functools import partial
 from tqdm.autonotebook import tqdm
 import numpy as np
 import matplotlib.pyplot as plt
-
+from einops import rearrange
 from model.utils import extract, default
 from model.BrownianBridge.base.modules.diffusionmodules.openaimodel import UNetModel
 from model.BrownianBridge.bbdm_utils import file_path
+
 
 class BrownianBridgeModel(nn.Module):
     def __init__(self, model_config):
@@ -79,7 +80,7 @@ class BrownianBridgeModel(nn.Module):
                 steps = (np.cos(steps / self.num_timesteps * np.pi) + 1.) / 2. * self.num_timesteps
                 self.steps = torch.from_numpy(steps)
         else:
-            self.steps = torch.arange(self.num_timesteps-1, -1, -1)
+            self.steps = torch.arange(self.num_timesteps - 1, -1, -1)
 
     def apply(self, weight_init):
         self.denoise_fn.apply(weight_init)
@@ -94,7 +95,7 @@ class BrownianBridgeModel(nn.Module):
         elif self.condition_key == 'hist_context':
             pass
         elif self.condition_key == "SpatialRescaler_context1":
-            context = x[:,:1]
+            context = x[:, :1]
         elif self.condition_key == "hist_context_y_concat":
             context = {'concat': y, 'crossattn': context}
         else:
@@ -111,28 +112,70 @@ class BrownianBridgeModel(nn.Module):
 
     def p_losses(self, x0, y, context, t, noise=None):
         """
-        model loss
+        Model loss function
         :param x0: encoded x_ori, E(x_ori) = x0
         :param y: encoded y_ori, E(y_ori) = y
-        :param y_ori: original source domain image
         :param t: timestep
         :param noise: Standard Gaussian Noise
-        :return: loss
+        :return: loss and log dict
         """
         b, c, h, w = x0.shape
         noise = default(noise, lambda: torch.randn_like(x0))
-
         x_t, objective = self.q_sample(x0, y, t, noise)
+
+        if context is not None:
+            if isinstance(context, dict):
+                for key in context:
+                    tensor = context[key]
+                    if tensor.dim() == 3:
+                        L = tensor.shape[-1]
+                        h = int(L ** 0.5)
+                        while h > 1 and L % h != 0:
+                            h -= 1
+                        w = L // h
+
+                        context[key] = rearrange(tensor, 'b c (h w) -> b c h w', h=h, w=w)
+
+                        if h < 16 or w < 16:
+                            pad_h = max(16 - h, 0)
+                            pad_w = max(16 - w, 0)
+                            context[key] = F.pad(context[key], (0, pad_w, 0, pad_h))
+            else:
+                if context.dim() == 3:
+                    L = context.shape[-1]
+                    h = int(L ** 0.5)
+                    while h > 1 and L % h != 0:
+                        h -= 1
+                    w = L // h
+                    context = rearrange(context, 'b c (h w) -> b c h w', h=h, w=w)
+
+                    if h < 16 or w < 16:
+                        pad_h = max(16 - h, 0)
+                        pad_w = max(16 - w, 0)
+                        context = F.pad(context, (0, pad_w, 0, pad_h))
+
+        print(f"\nShape debug:")
+        print(f"x_t: {x_t.shape}")
+        print(f"objective: {objective.shape}")
+
+        if isinstance(context, dict):
+            ctx_shapes = {k: v.shape for k, v in context.items()}
+            print("Context shapes:")
+            for k, v in ctx_shapes.items():
+                print(f"{k}: {v}")
+        else:
+            print(f"Context shape: {context.shape if context is not None else 'None'}")
+
         objective_recon = self.denoise_fn(x_t, timesteps=t, context=context)
 
-        from torch.nn.functional import interpolate
-
-        print("Shape of objective:", objective.shape)
-        print("Shape of objective_recon:", objective_recon.shape)
-
-        if objective.shape != objective_recon.shape:
-            objective_recon = interpolate(objective_recon, size=objective.shape[2:], mode='bilinear',
-                                          align_corners=False)
+        if objective_recon.shape[-2:] != objective.shape[-2:]:
+            print(f"Resizing objective_recon from {objective_recon.shape} to {objective.shape}")
+            objective_recon = F.interpolate(
+                objective_recon,
+                size=objective.shape[-2:],
+                mode='bicubic',
+                align_corners=False
+            ).clamp(-1.0, 1.0)
 
         if self.loss_type == 'l1':
             recloss = (objective - objective_recon).abs().mean()
@@ -142,11 +185,8 @@ class BrownianBridgeModel(nn.Module):
             raise NotImplementedError()
 
         x0_recon = self.predict_x0_from_objective(x_t, y, t, objective_recon)
-        log_dict = {
-            "loss": recloss,
-            "x0_recon": x0_recon
-        }
-        return recloss, log_dict
+
+        return recloss, {"loss": recloss, "x0_recon": x0_recon}
 
     def q_sample(self, x0, y, t, noise=None):
         noise = default(noise, lambda: torch.randn_like(x0))
@@ -211,7 +251,7 @@ class BrownianBridgeModel(nn.Module):
             return x0_recon, x0_recon
         else:
             t = torch.full((x_t.shape[0],), self.steps[i], device=x_t.device, dtype=torch.long)
-            n_t = torch.full((x_t.shape[0],), self.steps[i+1], device=x_t.device, dtype=torch.long)
+            n_t = torch.full((x_t.shape[0],), self.steps[i + 1], device=x_t.device, dtype=torch.long)
 
             objective_recon = self.denoise_fn(x_t, timesteps=t, context=context)
             x0_recon = self.predict_x0_from_objective(x_t, y, t, objective_recon=objective_recon)
@@ -240,24 +280,25 @@ class BrownianBridgeModel(nn.Module):
             num_iter = int(np.ceil(full_batch / sub_batch))
             x_t_recons = []
             x0_recons = []
-            
+
             for n in range(num_iter):
                 start_idx = n * sub_batch
                 end_idx = min((n + 1) * sub_batch, full_batch)
-                
+
                 x_t_sub = x_t[start_idx:end_idx]
                 y_sub = y[start_idx:end_idx]
                 context_sub = None
-                
+
                 if self.condition_key == 'hist_context_y_concat':
                     context_sub = {}
                     for key in context.keys():
                         context_sub[key] = context[key][start_idx:end_idx]
                 else:
                     context_sub = context[start_idx:end_idx]
-                    
-                x_t_recon, x0_recon = self.p_sample(x_t=x_t_sub, y=y_sub, context=context_sub, i=i, clip_denoised=clip_denoised)
-                
+
+                x_t_recon, x0_recon = self.p_sample(x_t=x_t_sub, y=y_sub, context=context_sub, i=i,
+                                                    clip_denoised=clip_denoised)
+
                 x_t_recons.append(x_t_recon)
                 x0_recons.append(x0_recon)
 
@@ -266,59 +307,62 @@ class BrownianBridgeModel(nn.Module):
         else:
             x_t, x0_recon = self.p_sample(x_t=x_t, y=y, context=context, i=i, clip_denoised=clip_denoised)
         return x_t, x0_recon
-    
+
     @torch.no_grad()
-    def p_sample_loop(self, x, y, id=None, context=None, clip_denoised=True, sample_mid_step=False, path=None, save=False, config=None, device='cpu'):
-        
+    def p_sample_loop(self, x, y, id=None, context=None, clip_denoised=True, sample_mid_step=False, path=None,
+                      save=False, config=None, device='cpu'):
+
         # save_img
         sample_step = self.model_config.BB.params.sample_step
         mid_slice = self.model_config.CondStageParams.in_channels // 2
         batch_size = y.shape[0]
-        
+
         inference_type = config.model.BB.params.inference_type
         num_ISTA_step = config.model.BB.params.num_ISTA_step
         ISTA_step_size = config.model.BB.params.ISTA_step_size
-        
+
         save_img = []
         if path is not None:
             sequence_path = os.path.join(path, 'sequence')
             if save and not os.path.exists(sequence_path):
                 os.makedirs(os.path.join(path, 'sequence'), exist_ok=True)
-        
+
         x, y, context = self.input_condition_config(x, y, context)
 
         if sample_mid_step:
             imgs, one_step_imgs = [y], []
             for i in tqdm(range(len(self.steps)), desc=f'sampling loop time step', total=len(self.steps)):
-                img, x0_recon = self.p_sample_sub_batch(x_t=imgs[-1], y=y, context=context, i=i, clip_denoised=clip_denoised)
+                img, x0_recon = self.p_sample_sub_batch(x_t=imgs[-1], y=y, context=context, i=i,
+                                                        clip_denoised=clip_denoised)
                 imgs.append(img)
                 one_step_imgs.append(x0_recon)
             return imgs, one_step_imgs
         else:
             img = y
-            
+
             for i in tqdm(range(len(self.steps)), desc=f'sampling loop time step', total=len(self.steps)):
                 if config.args.train:
                     img, x0_recon = self.p_sample(x_t=img, y=y, context=context, i=i, clip_denoised=clip_denoised)
                 else:
-                    img, x0_recon = self.p_sample_sub_batch(x_t=img, y=y, context=context, i=i, clip_denoised=clip_denoised)
-                
+                    img, x0_recon = self.p_sample_sub_batch(x_t=img, y=y, context=context, i=i,
+                                                            clip_denoised=clip_denoised)
+
                 if inference_type == 'normal' or config.args.train:
                     pass
-                
+
                 elif inference_type == 'average':
                     batch_size, ch_size, H, W = img.shape
                     radius = ch_size // 2
-                    
+
                     # batch shape to averaged volume
                     padded_size = batch_size + (2 * radius)
                     averaged_volume = torch.zeros((ch_size, padded_size, H, W), device=device)
                     dup_slices = torch.ones(padded_size, dtype=torch.int32, device=device) * ch_size
 
                     for ch in range(ch_size):
-                        averaged_volume[ch, ch:ch+batch_size] = img[:,ch]
+                        averaged_volume[ch, ch:ch + batch_size] = img[:, ch]
                         dup_slices[ch] = ch + 1
-                        dup_slices[-ch-1] = ch + 1
+                        dup_slices[-ch - 1] = ch + 1
 
                     # B+2*radious, H, W
                     averaged_volume = torch.sum(averaged_volume, dim=0, keepdim=False) / dup_slices[:, None, None]
@@ -326,25 +370,26 @@ class BrownianBridgeModel(nn.Module):
                     # averaged volume to batch shape
                     double_padded_size = batch_size + (4 * radius)
                     img = torch.zeros((ch_size, double_padded_size, H, W), device=device)
-                    for ch in range(ch_size-1, -1, -1):
-                        img[ch_size-1-ch, ch:ch+padded_size] = averaged_volume
-                    
-                    img = img[:, ch_size-1:ch_size-1+batch_size].permute(1, 0, 2, 3) # B, C, H, W
+                    for ch in range(ch_size - 1, -1, -1):
+                        img[ch_size - 1 - ch, ch:ch + padded_size] = averaged_volume
+
+                    img = img[:, ch_size - 1:ch_size - 1 + batch_size].permute(1, 0, 2, 3)  # B, C, H, W
                     del averaged_volume, dup_slices
-                    
+
                 elif 'ISTA' in inference_type:
                     batch_size, ch_size, H, W = img.shape
                     radius = ch_size // 2
                     averaged_volume = self.batch2avgvolume(img, device, pad=True)
                     img = self.volume2batch(averaged_volume, img.shape, device)
-                    
+
                     # correction
                     if i == len(self.steps) - 1:
                         continue
                     for iter in range(num_ISTA_step):
-                        _, x0_recon = self.p_sample_sub_batch(x_t=img, y=y, context=context, i=i+1, clip_denoised=clip_denoised)
+                        _, x0_recon = self.p_sample_sub_batch(x_t=img, y=y, context=context, i=i + 1,
+                                                              clip_denoised=clip_denoised)
                         del _
-                        score, var_t_nt = self.cal_score(x0=x0_recon, x_t=img, y=y, i=i+1)
+                        score, var_t_nt = self.cal_score(x0=x0_recon, x_t=img, y=y, i=i + 1)
 
                         # calulate step size
                         dim = torch.sqrt(torch.tensor(H * W, dtype=torch.float32, device=device))
@@ -352,8 +397,8 @@ class BrownianBridgeModel(nn.Module):
                             score_volume = self.batch2avgvolume(score, device, pad=True)
                         elif inference_type == 'ISTA_mid':
                             score_volume = score[:, radius]
-                            score_volume = torch.cat((score[0, :radius], score_volume, score[-1, radius+1:]), dim=0)
-                            
+                            score_volume = torch.cat((score[0, :radius], score_volume, score[-1, radius + 1:]), dim=0)
+
                         score_l2_norm_squared = torch.sum(torch.pow(score_volume, 2), dim=(1, 2), keepdim=True)
                         gamma = ISTA_step_size * var_t_nt * (dim / score_l2_norm_squared)
                         # print(f"gamma: {gamma[55]}")
@@ -361,16 +406,16 @@ class BrownianBridgeModel(nn.Module):
                         # print(f"score_l2_norm: {torch.sqrt(score_l2_norm_squared[55])}")
                         # print(f"score_l2_norm_squared: {score_l2_norm_squared[55]}")
                         gamma_score_batch = self.volume2batch(gamma * score_volume, img.shape, device)
-                            
+
                         img += gamma_score_batch
-                    
+
                 else:
                     raise NotImplementedError
 
-            # append and save image
+                # append and save image
                 if save:
                     save_img.append(img.detach().clone().cpu().numpy())
-        
+
             if save and path is not None:
                 for j in range(0, batch_size, 10):
                     saving_img = []
@@ -383,7 +428,6 @@ class BrownianBridgeModel(nn.Module):
 
             return img
 
-
     @torch.no_grad()
     def cal_score(self, x0, x_t, y, i):
         t = torch.full((x0.shape[0],), self.steps[i], device=x0.device, dtype=torch.long)
@@ -391,24 +435,23 @@ class BrownianBridgeModel(nn.Module):
         var_t = extract(self.variance_t, t, x0.shape)
         var_t_nt = extract(self.variance_t_tminus, t, x0.shape)
 
-        score_t = - ((x_t - (1.-m_t)*x0 - m_t*y) / var_t)
+        score_t = - ((x_t - (1. - m_t) * x0 - m_t * y) / var_t)
         return score_t, var_t_nt[0]
-        
 
     @torch.no_grad()
     def batch2avgvolume(self, batch_img, device, pad):
         batch_size, ch_size, H, W = batch_img.shape
         radius = ch_size // 2
-        
+
         # batch shape to averaged volume
         padded_size = batch_size + (2 * radius)
         averaged_volume = torch.zeros((ch_size, padded_size, H, W), device=device)
         dup_slices = torch.ones(padded_size, dtype=torch.int32, device=device) * ch_size
 
         for ch in range(ch_size):
-            averaged_volume[ch, ch:ch+batch_size] = batch_img[:,ch]
+            averaged_volume[ch, ch:ch + batch_size] = batch_img[:, ch]
             dup_slices[ch] = ch + 1
-            dup_slices[-ch-1] = ch + 1
+            dup_slices[-ch - 1] = ch + 1
 
         # B+2*radious, H, W
         averaged_volume = torch.sum(averaged_volume, dim=0, keepdim=False) / dup_slices[:, None, None]
@@ -427,12 +470,13 @@ class BrownianBridgeModel(nn.Module):
         double_padded_size = batch_size + (4 * radius)
         batch_img = torch.zeros((ch_size, double_padded_size, H, W), device=device)
         # batch_img = batch_img.to(device, non_blocking=True)
-        for ch in range(ch_size-1, -1, -1):
-            batch_img[ch_size-1-ch, ch:ch+padded_size] = volume_img
-        
-        batch_img = batch_img[:, ch_size-1:ch_size-1+batch_size].permute(1, 0, 2, 3) # B, C, H, W
+        for ch in range(ch_size - 1, -1, -1):
+            batch_img[ch_size - 1 - ch, ch:ch + padded_size] = volume_img
+
+        batch_img = batch_img[:, ch_size - 1:ch_size - 1 + batch_size].permute(1, 0, 2, 3)  # B, C, H, W
         return batch_img
-    
+
     @torch.no_grad()
-    def sample(self, x, y, id=None, context=None, clip_denoised=True, sample_mid_step=False, path=None, save=False, config=None, device='cpu'):
+    def sample(self, x, y, id=None, context=None, clip_denoised=True, sample_mid_step=False, path=None, save=False,
+               config=None, device='cpu'):
         return self.p_sample_loop(x, y, id, context, clip_denoised, sample_mid_step, path, save, config, device)

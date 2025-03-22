@@ -9,7 +9,7 @@ training:
   accumulate_grad_batches: 2
 
 testing:
-  clip_denoised: False
+  clip_denoised: True
   sample_num: 1
 
 data:
@@ -22,7 +22,7 @@ data:
     image_size: 250
     channels: 1
     to_normal: True
-    flip: True
+    flip: False
   train:
     batch_size: 1
     shuffle: True

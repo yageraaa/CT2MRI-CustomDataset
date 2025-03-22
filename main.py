@@ -14,7 +14,15 @@ import torch.multiprocessing as mp
 import torch.distributed as dist
 
 import wandb
+import signal
+import sys
 
+def signal_handler(sig, frame):
+    print("GPU cleaned.")
+    torch.cuda.empty_cache()
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, signal_handler)
 
 def parse_args_and_config():
     parser = argparse.ArgumentParser(description=globals()['__doc__'])
@@ -171,6 +179,8 @@ def CPU_singleGPU_launcher(config):
     else:
         with torch.no_grad():
             runner.test()
+
+    torch.cuda.empty_cache()
     return
 
 
@@ -182,33 +192,35 @@ def DDP_launcher(world_size, run_fn, config):
 
 
 def main():
-    with h5py.File("./processed_data/250_train_axial.hdf5", "r") as hf:
-        print("Keys in HDF5 file:", list(hf.keys()))
-        print("MR dataset shape:", hf['MR_dataset'].shape)
-        print("CT dataset shape:", hf['CT_dataset'].shape)
-        print("Index dataset shape:", hf['index_dataset'].shape)
-        print("Subjects shape:", hf['subject'].shape)
+    try:
+        with h5py.File("./processed_data/250_train_axial.hdf5", "r") as hf:
+            print("Keys in HDF5 file:", list(hf.keys()))
+            print("MR dataset shape:", hf['MR_dataset'].shape)
+            print("CT dataset shape:", hf['CT_dataset'].shape)
+            print("Index dataset shape:", hf['index_dataset'].shape)
+            print("Subjects shape:", hf['subject'].shape)
 
-    nconfig, dconfig = parse_args_and_config()
-    args = nconfig.args
+        nconfig, dconfig = parse_args_and_config()
+        args = nconfig.args
 
-    gpu_ids = args.gpu_ids
-    if gpu_ids == "-1":
-        nconfig.training.use_DDP = False
-        nconfig.training.device = [torch.device("cpu")]
-        CPU_singleGPU_launcher(nconfig)
-    else:
-        gpu_list = gpu_ids.split(",")
-        if len(gpu_list) > 1:
-            os.environ['CUDA_VISIBLE_DEVICES'] = gpu_ids
-            nconfig.training.use_DDP = True
-            DDP_launcher(world_size=len(gpu_list), run_fn=DDP_run_fn, config=nconfig)
-        else:
+        gpu_ids = args.gpu_ids
+        if gpu_ids == "-1":
             nconfig.training.use_DDP = False
-            nconfig.training.device = [torch.device(f"cuda:{gpu_list[0]}")]
+            nconfig.training.device = [torch.device("cpu")]
             CPU_singleGPU_launcher(nconfig)
-    return
-
+        else:
+            gpu_list = gpu_ids.split(",")
+            if len(gpu_list) > 1:
+                os.environ['CUDA_VISIBLE_DEVICES'] = gpu_ids
+                nconfig.training.use_DDP = True
+                DDP_launcher(world_size=len(gpu_list), run_fn=DDP_run_fn, config=nconfig)
+            else:
+                nconfig.training.use_DDP = False
+                nconfig.training.device = [torch.device(f"cuda:{gpu_list[0]}")]
+                CPU_singleGPU_launcher(nconfig)
+    finally:
+        print("Очистка памяти видюхи...")
+        torch.cuda.empty_cache()
 
 if __name__ == "__main__":
     main()

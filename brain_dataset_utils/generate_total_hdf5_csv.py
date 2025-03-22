@@ -1,10 +1,15 @@
 import argparse
-import time
 import h5py
-import os
-import numpy as np
 import nibabel as nib
+import numpy as np
+import os
 import pandas as pd
+import time
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from debug_utils import log_raw_data, log_transposed_data, log_filtered_data
+
 
 def make_transpose_dict(axcodes):
     dim_match = {} # Nifti uses RAH+ #
@@ -52,7 +57,6 @@ def filter_blank_slices_thick(CT_data, MR_data, threshold=50):
     binaray_label = np.where(CT_data > 1e-15, 1, 0)
     select_slices = (np.sum(binaray_label, axis=(0, 1)) > threshold)
 
-    # Если нет подходящих срезов, вернуть исходные данные с предупреждением
     if np.sum(select_slices) == 0:
         print("WARNING: All slices filtered out! Returning original data.")
         return CT_data, MR_data
@@ -112,14 +116,18 @@ def create_hdf5_dataset(args):
         MR_data = np.asanyarray(MR_data.dataobj)
         MR_data = np.nan_to_num(MR_data)
 
-        print("CT data shape:", CT_data.shape)  # Отладочный вывод
-        print("MR data shape:", MR_data.shape)  # Отладочный вывод
+        print("Raw CT range:", CT_data.min(), CT_data.max())
+        print("Raw MR range:", MR_data.min(), MR_data.max())
+
+        log_raw_data(CT_data, MR_data, idx, output_dir="debug/raw_data")
 
         CT_data = transpose_LPS_to_ITKSNAP_position(CT_data, args.plane)
         MR_data = transpose_LPS_to_ITKSNAP_position(MR_data, args.plane)
-        print(f"After transpose - CT shape: {CT_data.shape}, MR shape: {MR_data.shape}")
+        log_transposed_data(CT_data, MR_data, idx, output_dir="debug/transposed_data")
 
         CT_data, MR_data = filter_blank_slices_thick(CT_data, MR_data, threshold=50)
+        log_filtered_data(CT_data, MR_data, idx, output_dir="debug/filtered_data")
+        print(f"After transpose - CT shape: {CT_data.shape}, MR shape: {MR_data.shape}")
 
         # # Append finally processed images to arrays
         CT_dataset = np.append(CT_dataset, CT_data, axis=2)

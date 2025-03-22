@@ -2,6 +2,15 @@ from torch.utils.data import Dataset
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import numpy as np
+from torchvision import transforms
+import torch
+import torchvision
+
+from torch.utils.data import Dataset
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
+import numpy as np
+from torchvision import transforms
 
 class multi_ch_nifti_default_Dataset(Dataset):
     def __init__(self, image_dataset, index_dataset, subjects, radius, image_size=(250, 250), flip=False,
@@ -10,17 +19,17 @@ class multi_ch_nifti_default_Dataset(Dataset):
         self.images = image_dataset
         self.indice = index_dataset
         self.subjects = subjects
-
         self.radius = radius
-
-        print("Shape of images:", self.images.shape)  # Отладочный вывод
-        print("Shape of indices:", self.indice.shape)  # Отладочный вывод
-        print("Shape of subjects:", self.subjects.shape)  # Отладочный вывод
-
-        self._length = self.images.shape[2]
         self.flip = flip
         self.to_normal = to_normal
 
+        self.normalize = transforms.Normalize(mean=[0.5], std=[0.5])
+
+        print("Shape of images:", self.images.shape)
+        print("Shape of indices:", self.indice.shape)
+        print("Shape of subjects:", self.subjects.shape)
+
+        self._length = self.images.shape[2]
 
     def __len__(self):
         if self.flip:
@@ -35,29 +44,30 @@ class multi_ch_nifti_default_Dataset(Dataset):
 
         slice_number = self.indice[index, 0]
         max_slice_number = self.indice[index, 1]
-        
+
         if slice_number < self.radius:
-            image = self.images[:,:,index-slice_number:index+self.radius+1]
-            image = np.pad(image, ((0, 0), (0, 0), (self.radius-slice_number, 0)), mode='constant')
+            image = self.images[:, :, index - slice_number:index + self.radius + 1]
+            image = np.pad(image, ((0, 0), (0, 0), (self.radius - slice_number, 0)), mode='constant')
         elif slice_number > max_slice_number - self.radius:
-            image = self.images[:,:,index-self.radius:index+max_slice_number-slice_number+1]
-            image = np.pad(image, ((0, 0), (0, 0), (0, self.radius+slice_number-max_slice_number)), mode='constant')
+            image = self.images[:, :, index - self.radius:index + max_slice_number - slice_number + 1]
+            image = np.pad(image, ((0, 0), (0, 0), (0, self.radius + slice_number - max_slice_number)), mode='constant')
         else:
-            image = self.images[:,:,index-self.radius:index+self.radius+1]
+            image = self.images[:, :, index - self.radius:index + self.radius + 1]
 
         transform = A.Compose([
-                A.HorizontalFlip(p=p),
-                ToTensorV2(),
-            ])
-            
+            A.HorizontalFlip(p=p),
+            ToTensorV2(),
+        ])
+
         image = transform(image=image)['image'].float()
-        
+
         if self.to_normal:
-            image = (image - 0.5) * 2.
-            image.clamp_(-1., 1.)
+            image = image.float() / 255.0
+            image = self.normalize(image)
 
         return image, self.subjects[index]
         print(f"Image shape before transform: {image.shape}")
+        print(f"Image after normalization: min={image.min()}, max={image.max()}")
 
     def get_subject_names(self):
         return self.subjects

@@ -1,11 +1,15 @@
 import argparse
-import time
 import h5py
-import os
-import numpy as np
 import nibabel as nib
+import numpy as np
+import os
 import pandas as pd
 import pickle
+import time
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from debug_utils import log_histograms
 
 
 def transpose_LPS_to_ITKSNAP_position(np_data, plane):
@@ -38,11 +42,11 @@ def create_hdf5_dataset(args):
     scale = 10
     subject_dir = [os.path.join(args.data_dir, d) for d in os.listdir(args.data_dir)
                    if os.path.isdir(os.path.join(args.data_dir, d))]
-    
+
     subject_dir = df[df['set'].str.contains(args.which_set)].index.tolist()
     subject_dir = [os.path.join(args.data_dir, f"{pid}") for pid in subject_dir]
     print(f"data size: {len(subject_dir)}")
-        
+
     hist_dataset = {}
 
     for idx, current_subject in enumerate(subject_dir):
@@ -70,7 +74,7 @@ def create_hdf5_dataset(args):
         os.makedirs(os.path.dirname(fig_out_path), exist_ok=True)
         if visualize:
             visualize_histogram(normalized_histograms, num_bins, fig_out_path)
-        
+
         cum_hist = np.cumsum(normalized_histograms)
         fig_out_path = f'/root_dir/datasets/{modal}_hists_global_{args.height}/{sub_name}_cum.png'
         if visualize:
@@ -82,9 +86,14 @@ def create_hdf5_dataset(args):
         fig_out_path = f'/root_dir/datasets/{modal}_hists_global_{args.height}/{sub_name}_diff.png'
         if visualize:
             visualize_histogram(hist_diff, num_bins, fig_out_path)
+
+        output_dir = f"./debug/histograms/{args.hist_type}"
+        print(f"Saving histograms to: {output_dir}")
+        log_histograms(normalized_histograms, cum_hist, hist_diff, sub_name, output_dir=output_dir)
+
         combined_histogram = np.stack((normalized_histograms, cum_hist, hist_diff), axis=1)
-        combined_histogram = np.expand_dims(combined_histogram, axis=-1) # num_bins, 3, 1
-        
+        combined_histogram = np.expand_dims(combined_histogram, axis=-1)  # num_bins, 3, 1
+
         hist_dataset[sub_name] = combined_histogram
         print(combined_histogram.shape)
         end = time.time() - start

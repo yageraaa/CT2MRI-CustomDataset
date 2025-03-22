@@ -59,7 +59,6 @@ def get_optimizer(optim_config, parameters):
         return NotImplementedError('Optimizer {} not understood.'.format(optim_config.optimizer))
 
 
-
 def get_dataset(data_config, test=False):
     print("Available datasets:", list(Registers.datasets.keys()))
     if test:
@@ -72,28 +71,45 @@ def get_dataset(data_config, test=False):
 
 
 @torch.no_grad()
-def save_single_image(image, save_path, file_name, to_normal=True):
+def save_single_image(image, save_path, file_name, to_normal=False):
     image = image.detach().clone()
+
+    if image.dim() != 3 or image.size(0) not in [1, 3]:
+        raise ValueError(f"Ожида тензор с размерностями (C, H, W). Получено: {image.shape}")
+
     if to_normal:
-        image = image.mul_(0.5).add_(0.5).clamp_(0, 1.)
-    image = image.mul_(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
-    if image.shape[2] == 1:
-        image = image[:,:,0]
-    im = Image.fromarray(image)
+        image = image.clamp_(0, 1)
+    else:
+        if image.min() < -0.1 or image.max() > 1.1:
+            image = (image + 1) / 2
+        else:
+            image = image.clamp_(0, 1)
+
+    image = image.mul(255).add_(0.5).clamp_(0, 255).to(torch.uint8)
+
+    image = image.permute(1, 2, 0).cpu().numpy()
+
+    from PIL import Image
+    im = Image.fromarray(image.squeeze())
     im.save(os.path.join(save_path, file_name))
+
 
 
 @torch.no_grad()
 def get_image_grid(batch, grid_size=4, to_normal=True):
     batch = batch.detach().clone()
-    image_grid = make_grid(batch, nrow=grid_size)
-    if to_normal:
-        if batch.min() < -0.1 or batch.max() > 1.1:
-            image_grid = image_grid.mul_(0.5).add_(0.5)
-        image_grid = image_grid.clamp_(0, 1.)
-    image_grid = image_grid.mul_(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
-    return image_grid
+    print(f"Batch raw values: min={batch.min()}, max={batch.max()}")
 
+    if to_normal:
+        if batch.min() < -1.1 or batch.max() > 1.1:
+            print("Applying normalization...")
+            batch = (batch + 1) / 2  # [-1, 1] -> [0, 1]
+    else:
+        batch = (batch - batch.min()) / (batch.max() - batch.min())
+
+    image_grid = make_grid(batch, nrow=grid_size)
+    image_grid = (image_grid * 255).clamp(0, 255).to(torch.uint8)
+    return image_grid.permute(1, 2, 0).cpu().numpy()
 
 def save_syn_image(images_3d, raw_image_path, out_path, pid):
     raw_image = nib.load(raw_image_path)
@@ -106,9 +122,9 @@ def save_syn_image(images_3d, raw_image_path, out_path, pid):
     nii_img.set_sform(raw_image.get_sform())
     nii_img.set_qform(raw_image.get_qform())
     nib.save(nii_img, out_path)
-    
+
     print(f'saved_id: {pid}')
-    
+
     return nii_img.get_fdata(), raw_image.get_fdata(), pid
 
 
@@ -118,4 +134,3 @@ def print_runtime(start_time, end_time):
     minutes = int((total_duration % 3600) // 60)
     seconds = int(total_duration % 60)
     print(f"total time: {hours}h {minutes}m {seconds}s")
-
