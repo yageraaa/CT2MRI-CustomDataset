@@ -19,6 +19,10 @@ import pandas as pd
 import time
 import wandb
 
+import torchmetrics
+import torchmetrics.image
+
+
 
 @Registers.runners.register_with_name('BBDMRunner')
 class BBDMRunner(DiffusionBaseRunner):
@@ -206,31 +210,61 @@ class BBDMRunner(DiffusionBaseRunner):
         context = context[0] if context else None
 
         batch_size = x.shape[0] if x.shape[0] < 4 else 4
+        device = self.config.training.device[0]
 
-        x = x[0:batch_size].to(self.config.training.device[0])
-        x_cond = x_cond[0:batch_size].to(self.config.training.device[0])
-
-        try:
-            wandb.log({
-                f"{stage}_skip_sample_hist": wandb.Histogram(sample.cpu().numpy()),
-                f"{stage}_condition_hist": wandb.Histogram(x_cond.cpu().numpy())
-            }, step=self.global_step)
-        except Exception as e:
-            print(f"Histogramms ERROR: {e}")
+        x = x[0:batch_size].to(device)
+        x_cond = x_cond[0:batch_size].to(device)
 
         if context is not None:
-            context = context[0:batch_size].to(self.config.training.device[0])
+            context = context[0:batch_size].to(device)
+
+        sample = net.sample(x, x_cond, context=context, clip_denoised=self.config.testing.clip_denoised,
+                            config=self.config, device=device).cpu()
+
+        if stage in ['train', 'val', 'test'] and sample.numel() > 0:
+            try:
+                max_pixel = max(x.max().item(), sample.max().item())
+
+                x_ssim = x.squeeze(2) if x.dim() == 5 else x
+                sample_ssim = sample.squeeze(2) if sample.dim() == 5 else sample
+
+                min_dim = min(x_ssim.shape[-2:])
+                kernel_size = min(11, min_dim - 2 if min_dim > 2 else 1)
+
+                psnr = torchmetrics.image.PeakSignalNoiseRatio(data_range=max_pixel).to(device)
+                ssim = torchmetrics.image.StructuralSimilarityIndexMeasure(
+                    data_range=max_pixel,
+                    kernel_size=kernel_size
+                ).to(device)
+                mse = torchmetrics.MeanSquaredError().to(device)
+                mae = torchmetrics.MeanAbsoluteError().to(device)
+
+                try:
+                    psnr_val = psnr(sample_ssim.to(device), x_ssim)
+                    ssim_val = ssim(sample_ssim.to(device), x_ssim)
+                    mse_val = mse(sample.to(device), x)
+                    mae_val = mae(sample.to(device), x)
+
+                    if wandb.run is not None:
+                        wandb.log({
+                            f"{stage}/PSNR": psnr_val,
+                            f"{stage}/SSIM": ssim_val,
+                            f"{stage}/MSE": mse_val,
+                            f"{stage}/MAE": mae_val
+                        }, step=self.global_step)
+                except Exception as metric_error:
+                    print(f"Ошибка при вычислении метрик: {str(metric_error)}")
+            except Exception as e:
+                print(f"Оштбка при инициализации метрик: {str(e)}")
 
         grid_size = 4
-
         print(f"Skip Sample values before processing: min={x.min()}, max={x.max()}")
-        sample = net.sample(x, x_cond, context=context, clip_denoised=self.config.testing.clip_denoised,
-                            config=self.config, device=self.config.training.device[0]).to('cpu')
         image_grid = get_image_grid(sample, grid_size, to_normal=False)
         mid_slice_index = image_grid.shape[-1] // 2
         image_grid = image_grid[:, :, mid_slice_index:mid_slice_index + 1]
         im = Image.fromarray(image_grid[:, :, 0])
         im.save(os.path.join(sample_path, 'skip_sample.png'))
+
         if stage != 'test':
             self.writer.add_image(f'{stage}_skip_sample', image_grid, self.global_step, dataformats='HWC')
             try:
@@ -265,7 +299,6 @@ class BBDMRunner(DiffusionBaseRunner):
             except:
                 print(f'Could not log {stage}_ground_truth to wandb')
 
-        # В BBDMRunner.sample
         plt.figure(figsize=(20, 10))
         plt.subplot(1, 4, 1);
         plt.imshow(sample[0, 0].cpu().numpy(), cmap='gray');
