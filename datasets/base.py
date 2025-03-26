@@ -23,8 +23,6 @@ class multi_ch_nifti_default_Dataset(Dataset):
         self.flip = flip
         self.to_normal = to_normal
 
-        self.normalize = transforms.Normalize(mean=[0.5], std=[0.5])
-
         print("Shape of images:", self.images.shape)
         print("Shape of indices:", self.indice.shape)
         print("Shape of subjects:", self.subjects.shape)
@@ -62,13 +60,16 @@ class multi_ch_nifti_default_Dataset(Dataset):
         image = transform(image=image)['image'].float()
 
         if self.to_normal:
-            image = image.float() / 255.0
-            image = self.normalize(image)
+            mean = torch.mean(image)
+            std = torch.std(image)
+            if std == 0:
+                std = 1.0
+            image = (image - mean) / std
 
-        return image, self.subjects[index]
         print(f"Image shape before transform: {image.shape}")
         print(f"Image after normalization: min={image.min()}, max={image.max()}")
 
+        return image, self.subjects[index]
+
     def get_subject_names(self):
         return self.subjects
-
