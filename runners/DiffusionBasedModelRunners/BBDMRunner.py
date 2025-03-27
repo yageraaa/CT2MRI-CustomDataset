@@ -221,7 +221,7 @@ class BBDMRunner(DiffusionBaseRunner):
         sample = net.sample(x, x_cond, context=context, clip_denoised=self.config.testing.clip_denoised,
                             config=self.config, device=device).cpu()
 
-        if stage in ['train', 'val', 'test'] and sample.numel() > 0:
+        if stage in ['val'] and sample.numel() > 0:
             try:
                 max_pixel = max(x.max().item(), sample.max().item())
 
