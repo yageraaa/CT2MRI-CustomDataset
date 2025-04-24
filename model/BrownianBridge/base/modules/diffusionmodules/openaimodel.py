@@ -3,7 +3,7 @@ from abc import abstractmethod
 from functools import partial
 import math
 from typing import Iterable
-import torch
+
 import numpy as np
 import torch as th
 import torch.nn as nn
@@ -718,7 +718,7 @@ class UNetModel(nn.Module):
         self.middle_block.apply(convert_module_to_f32)
         self.output_blocks.apply(convert_module_to_f32)
 
-    def forward(self, x, timesteps=None, context=None, y=None, **kwargs):
+    def forward(self, x, timesteps=None, context=None, y=None,**kwargs):
         """
         Apply the model to an input batch.
         :param x: an [N x C x ...] Tensor of inputs.
@@ -728,7 +728,7 @@ class UNetModel(nn.Module):
         :return: an [N x C x ...] Tensor of outputs.
         """
         assert (y is not None) == (
-                self.num_classes is not None
+            self.num_classes is not None
         ), "must specify y if and only if the model is class-conditional"
         hs = []
         t_emb = timestep_embedding(timesteps, self.model_channels, repeat_only=False)
@@ -752,10 +752,8 @@ class UNetModel(nn.Module):
 
         for module in self.output_blocks:
             hspop = hs.pop()
-            print("Shape of h:", h.shape)
-            print("Shape of hspop:", hspop.shape)
             if h.shape[2:] != hspop.shape[2:]:
-                hspop = torch.nn.functional.interpolate(hspop, size=h.shape[2:], mode='bilinear', align_corners=False)
+                hspop = F.interpolate(hspop, size=h.shape[2:], mode='nearest')
             h = th.cat([h, hspop], dim=1)
             h = module(h, emb, context)
         h = h.type(x.dtype)
@@ -941,7 +939,6 @@ class EncoderUNetModel(nn.Module):
                 normalization(2048),
                 nn.SiLU(),
                 nn.Linear(2048, self.out_channels),
-                nn.Sigmoid()
             )
         else:
             raise NotImplementedError(f"Unexpected {pool} pooling")
@@ -983,4 +980,3 @@ class EncoderUNetModel(nn.Module):
         else:
             h = h.type(x.dtype)
             return self.out(h)
-

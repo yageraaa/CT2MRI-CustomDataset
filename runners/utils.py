@@ -96,14 +96,14 @@ def save_single_image(image, save_path, file_name, to_normal=False):
 
 
 @torch.no_grad()
-def get_image_grid(batch, grid_size=4, to_normal=True):
+def get_image_grid(batch, grid_size=4, to_normal=False):
     batch = batch.detach().clone()
     print(f"Batch raw values: min={batch.min()}, max={batch.max()}")
 
     if to_normal:
         if batch.min() < -1.1 or batch.max() > 1.1:
             print("Applying normalization...")
-            batch = (batch + 1) / 2  # [-1, 1] -> [0, 1]
+            batch = (batch + 1) / 2
     else:
         batch = (batch - batch.min()) / (batch.max() - batch.min())
 

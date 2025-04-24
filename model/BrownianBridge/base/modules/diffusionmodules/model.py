@@ -67,7 +67,7 @@ class Downsample(nn.Module):
                                         in_channels,
                                         kernel_size=3,
                                         stride=2,
-                                        padding=1)
+                                        padding=0)
 
     def forward(self, x):
         if self.with_conv:
@@ -116,7 +116,7 @@ class ResnetBlock(nn.Module):
                                                     out_channels,
                                                     kernel_size=1,
                                                     stride=1,
-                                                    padding=1)
+                                                    padding=0)
 
     def forward(self, x, temb):
         h = x
@@ -157,22 +157,22 @@ class AttnBlock(nn.Module):
                                  in_channels,
                                  kernel_size=1,
                                  stride=1,
-                                 padding=1)
+                                 padding=0)
         self.k = torch.nn.Conv2d(in_channels,
                                  in_channels,
                                  kernel_size=1,
                                  stride=1,
-                                 padding=1)
+                                 padding=0)
         self.v = torch.nn.Conv2d(in_channels,
                                  in_channels,
                                  kernel_size=1,
                                  stride=1,
-                                 padding=1)
+                                 padding=0)
         self.proj_out = torch.nn.Conv2d(in_channels,
                                         in_channels,
                                         kernel_size=1,
                                         stride=1,
-                                        padding=1)
+                                        padding=0)
 
 
     def forward(self, x):
@@ -832,4 +832,3 @@ class FirstStagePostProcessor(nn.Module):
         if self.do_reshape:
             z = rearrange(z,'b c h w -> b (h w) c')
         return z
-
