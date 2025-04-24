@@ -154,22 +154,12 @@ class BrownianBridgeModel(nn.Module):
                         pad_w = max(16 - w, 0)
                         context = F.pad(context, (0, pad_w, 0, pad_h))
 
-        print(f"\nShape debug:")
-        print(f"x_t: {x_t.shape}")
-        print(f"objective: {objective.shape}")
-
         if isinstance(context, dict):
             ctx_shapes = {k: v.shape for k, v in context.items()}
-            print("Context shapes:")
-            for k, v in ctx_shapes.items():
-                print(f"{k}: {v}")
-        else:
-            print(f"Context shape: {context.shape if context is not None else 'None'}")
 
         objective_recon = self.denoise_fn(x_t, timesteps=t, context=context)
 
         if objective_recon.shape[-2:] != objective.shape[-2:]:
-            print(f"Resizing objective_recon from {objective_recon.shape} to {objective.shape}")
             objective_recon = F.interpolate(
                 objective_recon,
                 size=objective.shape[-2:],

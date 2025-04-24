@@ -22,11 +22,6 @@ class multi_ch_nifti_default_Dataset(Dataset):
         self.radius = radius
         self.flip = flip
         self.to_normal = to_normal
-
-        print("Shape of images:", self.images.shape)
-        print("Shape of indices:", self.indice.shape)
-        print("Shape of subjects:", self.subjects.shape)
-
         self._length = self.images.shape[2]
 
     def __len__(self):
@@ -66,8 +61,6 @@ class multi_ch_nifti_default_Dataset(Dataset):
                 std = 1.0
             image = (image - mean) / std
 
-        print(f"Image shape before transform: {image.shape}")
-        print(f"Image after normalization: min={image.min()}, max={image.max()}")
 
         return image, self.subjects[index]
 

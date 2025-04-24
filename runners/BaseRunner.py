@@ -433,13 +433,6 @@ class BaseRunner(ABC):
                         (x, x_name), (x_cond, x_cond_name), *context = train_batch
                         context = context[0] if context else None
 
-                        print(f"Train batch - x shape: {x.shape}, x range: [{x.min()}, {x.max()}]")
-                        print(
-                            f"Train batch - x_cond shape: {x_cond.shape}, x_cond range: [{x_cond.min()}, {x_cond.max()}]")
-                        if context is not None:
-                            print(
-                                f"Train batch - context shape: {context.shape}, context range: [{context.min()}, {context.max()}]")
-
                         try:
                             wandb.log({
                                 "train_batch/x": wandb.Image(x[0].cpu().numpy(), caption=f"x: {x_name[0]}"),

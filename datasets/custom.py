@@ -95,9 +95,6 @@ class hist_context_CT2MR_Paired_Dataset(Dataset):
             index_dataset = np.array(hf.get('index_dataset')).astype(np.uint8)
             subjects = np.array(hf.get("subject"))
 
-        print("Number of MR samples:", len(A_dataset))
-        print("Number of CT samples:", len(B_dataset))
-
         hist_type = dataset_config.hist_type
         hist_path = os.path.join(dataset_config.dataset_path,
                                  f"MR_hist_global_{dataset_config.image_size}_{stage}_{dataset_config.plane}_avg.pkl")
@@ -112,8 +109,6 @@ class hist_context_CT2MR_Paired_Dataset(Dataset):
                                                        flip=self.flip, to_normal=self.to_normal)
         self.imgs_cond = multi_ch_nifti_default_Dataset(B_dataset, index_dataset, subjects, self.radius,
                                                         self.image_size, flip=self.flip, to_normal=self.to_normal)
-
-        print("Number of images in dataset:", len(self.imgs_ori))
 
     def __len__(self):
         return len(self.imgs_ori)

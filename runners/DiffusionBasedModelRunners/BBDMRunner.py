@@ -258,7 +258,6 @@ class BBDMRunner(DiffusionBaseRunner):
                 print(f"Оштбка при инициализации метрик: {str(e)}")
 
         grid_size = 4
-        print(f"Skip Sample values before processing: min={x.min()}, max={x.max()}")
         image_grid = get_image_grid(sample, grid_size, to_normal=False)
         mid_slice_index = image_grid.shape[-1] // 2
         image_grid = image_grid[:, :, mid_slice_index:mid_slice_index + 1]
@@ -273,7 +272,6 @@ class BBDMRunner(DiffusionBaseRunner):
             except:
                 print(f'Could not log {stage}_skip_sample to wandb')
 
-        print(f"Condition values before processing: min={x_cond.min()}, max={x_cond.max()}")
         image_grid = get_image_grid(x_cond.to('cpu'), grid_size, to_normal=False)
         image_grid = image_grid[:, :, mid_slice_index:mid_slice_index + 1]
         im = Image.fromarray(image_grid[:, :, 0])
@@ -286,7 +284,6 @@ class BBDMRunner(DiffusionBaseRunner):
             except:
                 print(f'Could not log {stage}_condition to wandb')
 
-        print(f"Ground Truth values before processing: min={x.min()}, max={x.max()}")
         image_grid = get_image_grid(x.to('cpu'), grid_size, to_normal=False)
         image_grid = image_grid[:, :, mid_slice_index:mid_slice_index + 1]
         im = Image.fromarray(image_grid[:, :, 0])

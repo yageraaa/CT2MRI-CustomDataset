@@ -193,13 +193,6 @@ def DDP_launcher(world_size, run_fn, config):
 
 def main():
     try:
-        with h5py.File("./processed_data/250_train_axial.hdf5", "r") as hf:
-            print("Keys in HDF5 file:", list(hf.keys()))
-            print("MR dataset shape:", hf['MR_dataset'].shape)
-            print("CT dataset shape:", hf['CT_dataset'].shape)
-            print("Index dataset shape:", hf['index_dataset'].shape)
-            print("Subjects shape:", hf['subject'].shape)
-
         nconfig, dconfig = parse_args_and_config()
         args = nconfig.args
 
