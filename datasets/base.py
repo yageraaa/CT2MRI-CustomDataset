@@ -54,12 +54,12 @@ class multi_ch_nifti_default_Dataset(Dataset):
 
         image = transform(image=image)['image'].float()
 
-        if self.to_normal:
-            mean = torch.mean(image)
-            std = torch.std(image)
-            if std == 0:
-                std = 1.0
-            image = (image - mean) / std
+        # if self.to_normal:
+        #     mean = torch.mean(image)
+        #     std = torch.std(image)
+        #     if std == 0:
+        #         std = 1.0
+        #     image = (image - mean) / std
 
 
         return image, self.subjects[index]

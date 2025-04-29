@@ -105,7 +105,8 @@ def get_image_grid(batch, grid_size=4, to_normal=False):
             print("Applying normalization...")
             batch = (batch + 1) / 2
     else:
-        batch = (batch - batch.min()) / (batch.max() - batch.min())
+        # batch = (batch - batch.min()) / (batch.max() - batch.min())
+        batch = batch
 
     image_grid = make_grid(batch, nrow=grid_size)
     image_grid = (image_grid * 255).clamp(0, 255).to(torch.uint8)

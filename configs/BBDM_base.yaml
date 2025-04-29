@@ -22,12 +22,12 @@ data:
     image_size: 250
     channels: 1
     to_normal: True
-    flip: False
+    flip: True
   train:
-    batch_size: 1
+    batch_size: 2
     shuffle: True
   val:
-    batch_size: 1
+    batch_size: 2
     shuffle: True
   test:
     batch_size: 1
