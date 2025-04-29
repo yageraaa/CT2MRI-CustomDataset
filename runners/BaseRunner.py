@@ -24,6 +24,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from debug_utils import log_data_loader_samples
 
 import wandb
+import torchmetrics
+import torchmetrics.image
 
 
 class BaseRunner(ABC):
@@ -78,7 +80,6 @@ class BaseRunner(ABC):
                            output_device=self.config.training.local_rank)
         else:
             self.net = self.net.to(self.config.training.device[0])
-        # self.ema.reset_device(self.net)
 
     # save configuration file
     def save_config(self):
@@ -96,7 +97,6 @@ class BaseRunner(ABC):
     def initialize_model_optimizer_scheduler(self, config, is_test=False):
         """
         get model, optimizer, scheduler
-        :param args: args
         :param config: config
         :param is_test: is_test
         :return: net: Neural Network, nn.Module;
@@ -221,17 +221,30 @@ class BaseRunner(ABC):
 
         pbar = tqdm(val_loader, total=len(val_loader), smoothing=0.01)
         step = 0
+        total_slices = 0
         loss_sum = 0.
         dloss_sum = 0.
+        psnr_sum = 0.
+        ssim_sum = 0.
+        mse_sum = 0.
+        mae_sum = 0.
+        device = self.config.training.device[0]
+
         for val_batch in pbar:
-            loss = self.loss_fn(net=self.net,
-                                batch=val_batch,
-                                epoch=epoch,
-                                step=step,
-                                opt_idx=0,
-                                stage='val',
-                                write=False)
+            (x, x_name), (x_cond, x_cond_name), *context = val_batch
+            context = context[0] if context else None
+
+            batch_size = x.shape[0]
+            total_slices += batch_size
+            x = x.to(device)
+            x_cond = x_cond.to(device)
+            if context is not None:
+                context = context.to(device)
+
+            loss, additional_info = self.net(x, x_cond, context=context)
+            x0_recon = additional_info['x0_recon'].cpu()
             loss_sum += loss
+
             if len(self.optimizer) > 1:
                 loss = self.loss_fn(net=self.net,
                                     batch=val_batch,
@@ -241,20 +254,78 @@ class BaseRunner(ABC):
                                     stage='val',
                                     write=False)
                 dloss_sum += loss
-            step += 1
-        average_loss = loss_sum / step
-        self.writer.add_scalar(f'val_epoch/loss', average_loss, epoch)
-        try:
-            wandb.log({f'val_epoch/loss': average_loss}, step=epoch)
-        except:
-            print('Could not log loss/val_epoch to wandb')
-        if len(self.optimizer) > 1:
-            average_dloss = dloss_sum / step
-            self.writer.add_scalar(f'val_dloss_epoch/loss', average_dloss, epoch)
+
             try:
-                wandb.log({f'loss/val_dloss_epoch': average_dloss}, step=epoch)
-            except:
-                print('Could not log loss/val_dloss_epoch to wandb')
+                max_pixel = max(x.max().item(), x0_recon.max().item())
+                x_ssim = x.squeeze(2) if x.dim() == 5 else x
+                recon_ssim = x0_recon.squeeze(2) if x0_recon.dim() == 5 else x0_recon
+
+                min_dim = min(x_ssim.shape[-2:])
+                kernel_size = min(11, min_dim - 2 if min_dim > 2 else 1)
+
+                psnr = torchmetrics.image.PeakSignalNoiseRatio(data_range=max_pixel).to(device)
+                ssim = torchmetrics.image.StructuralSimilarityIndexMeasure(
+                    data_range=max_pixel,
+                    kernel_size=kernel_size
+                ).to(device)
+                mse = torchmetrics.MeanSquaredError().to(device)
+                mae = torchmetrics.MeanAbsoluteError().to(device)
+
+                psnr_val = psnr(recon_ssim.to(device), x_ssim)
+                ssim_val = ssim(recon_ssim.to(device), x_ssim)
+                mse_val = mse(x0_recon.to(device), x)
+                mae_val = mae(x0_recon.to(device), x)
+
+                psnr_sum += psnr_val.item() * batch_size
+                ssim_sum += ssim_val.item() * batch_size
+                mse_sum += mse_val.item() * batch_size
+                mae_sum += mae_val.item() * batch_size
+            except Exception as e:
+                print(f"Ошибка при вычислении метрик в батче {step}: {str(e)}")
+
+            step += 1
+
+        average_loss = loss_sum.item() / step
+        average_psnr = psnr_sum / total_slices if total_slices > 0 else 0
+        average_ssim = ssim_sum / total_slices if total_slices > 0 else 0
+        average_mse = mse_sum / total_slices if total_slices > 0 else 0
+        average_mae = mae_sum / total_slices if total_slices > 0 else 0
+
+        print(f"Epoch {epoch} - Validation Metrics (averaged over {total_slices} slices):")
+        print(f"Loss: {average_loss:.4f}")
+        print(f"PSNR: {average_psnr:.4f}")
+        print(f"SSIM: {average_ssim:.4f}")
+        print(f"MSE: {average_mse:.4f}")
+        print(f"MAE: {average_mae:.4f}")
+
+        self.writer.add_scalar(f'val_epoch/loss', average_loss, epoch)
+        self.writer.add_scalar(f'val_epoch/PSNR', average_psnr, epoch)
+        self.writer.add_scalar(f'val_epoch/SSIM', average_ssim, epoch)
+        self.writer.add_scalar(f'val_epoch/MSE', average_mse, epoch)
+        self.writer.add_scalar(f'val_epoch/MAE', average_mae, epoch)
+        self.writer.flush()
+
+        try:
+            wandb.log({
+                'val_epoch/loss': float(average_loss),
+                'val_epoch/PSNR': float(average_psnr),
+                'val_epoch/SSIM': float(average_ssim),
+                'val_epoch/MSE': float(average_mse),
+                'val_epoch/MAE': float(average_mae)
+            }, step=self.global_step)
+            wandb.log_commit()
+        except Exception as e:
+            print(f'Could not log metrics/val_epoch to wandb: {str(e)}')
+
+        if len(self.optimizer) > 1:
+            average_dloss = dloss_sum.item() / step
+            self.writer.add_scalar(f'val_dloss_epoch/loss', average_dloss, epoch)
+            self.writer.flush()
+            try:
+                wandb.log({f'loss/val_dloss_epoch': average_dloss}, step=self.global_step)
+                wandb.log_commit()
+            except Exception as e:
+                print(f'Could not log loss/val_dloss_epoch to wandb: {str(e)}')
 
         self.restore_ema()
         return average_loss
@@ -365,8 +436,8 @@ class BaseRunner(ABC):
                     f"{stage}_dataset_sample_{idx}/x": wandb.Image(x_np, caption=f"x: {x_name}"),
                     f"{stage}_dataset_sample_{idx}/x_cond": wandb.Image(x_cond_np, caption=f"x_cond: {x_cond_name}"),
                 })
-            except:
-                print(f"Could not log {stage} dataset sample {idx} to wandb")
+            except Exception as e:
+                print(f"Could not log {stage} dataset sample {idx} to wandb: {str(e)}")
 
     def train(self):
         print(self.__class__.__name__)
@@ -407,6 +478,12 @@ class BaseRunner(ABC):
                                     num_workers=1,
                                     drop_last=False)
 
+        # Отладочный вывод размеров датасетов
+        print(f"Training dataset size: {len(train_dataset)} samples")
+        print(f"Validation dataset size: {len(val_dataset)} samples")
+        print(f"Number of batches in train_loader: {len(train_loader)}")
+        print(f"Number of batches in val_loader: {len(val_loader)}")
+
         epoch_length = len(train_loader)
         start_epoch = self.global_epoch
         print(
@@ -439,8 +516,8 @@ class BaseRunner(ABC):
                                 "train_batch/x_cond": wandb.Image(x_cond[0].cpu().numpy(),
                                                                   caption=f"x_cond: {x_cond_name[0]}"),
                             }, step=self.global_step)
-                        except:
-                            print("Could not log train batch to wandb")
+                        except Exception as e:
+                            print(f"Could not log train batch to wandb: {str(e)}")
 
                     losses = []
                     for i in range(len(self.optimizer)):
@@ -597,17 +674,14 @@ class BaseRunner(ABC):
 
         try:
             wandb.finish()
-        except:
-            print('Could not finish wandb')
+        except Exception as e:
+            print(f'Could not finish wandb: {str(e)}')
 
         torch.cuda.empty_cache()
-
-    torch.cuda.empty_cache()
 
     @torch.no_grad()
     def test(self):
         test_dataset = get_dataset(self.config.data, test=True)
-        # test_dataset = val_dataset
         if self.config.training.use_DDP:
             test_sampler = torch.utils.data.distributed.DistributedSampler(test_dataset)
             test_loader = DataLoader(test_dataset,
@@ -646,7 +720,7 @@ class BaseRunner(ABC):
 
         try:
             wandb.finish()
-        except:
-            print('Could not finish wandb')
+        except Exception as e:
+            print(f'Could not finish wandb: {str(e)}')
 
         torch.cuda.empty_cache()

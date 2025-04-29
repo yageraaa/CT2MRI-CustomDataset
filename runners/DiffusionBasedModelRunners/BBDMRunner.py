@@ -19,10 +19,6 @@ import pandas as pd
 import time
 import wandb
 
-import torchmetrics
-import torchmetrics.image
-
-
 
 @Registers.runners.register_with_name('BBDMRunner')
 class BBDMRunner(DiffusionBaseRunner):
@@ -32,8 +28,6 @@ class BBDMRunner(DiffusionBaseRunner):
     def initialize_model(self, config):
         if config.model.model_type == "BBDM":
             bbdmnet = BrownianBridgeModel(config.model).to(config.training.device[0])
-        # elif config.model.model_type == "LBBDM":
-        #     bbdmnet = LatentBrownianBridgeModel(config.model).to(config.training.device[0])
         else:
             raise NotImplementedError
         bbdmnet.apply(weights_init)
@@ -185,21 +179,21 @@ class BBDMRunner(DiffusionBaseRunner):
             self.writer.add_scalar(f'loss/{stage}', loss, step)
             try:
                 wandb.log({f"loss/{stage}": loss}, step=step)
-            except:
-                print(f'Could not log loss to wandb')
+            except Exception as e:
+                print(f'Could not log loss to wandb: {str(e)}')
             if additional_info.__contains__('recloss_noise'):
                 self.writer.add_scalar(f'recloss_noise/{stage}', additional_info['recloss_noise'], step)
                 try:
                     wandb.log({f"recloss_noise/{stage}": additional_info["recloss_noise"]}, step=step)
-                except:
-                    print(f'Could not log recloss_noise to wandb')
+                except Exception as e:
+                    print(f'Could not log recloss_noise to wandb: {str(e)}')
 
             if additional_info.__contains__('recloss_xy'):
                 self.writer.add_scalar(f'recloss_xy/{stage}', additional_info['recloss_xy'], step)
                 try:
                     wandb.log({f"recloss_xy/{stage}": additional_info["recloss_xy"]}, step=step)
-                except:
-                    print(f'Could not log recloss_xy to wandb')
+                except Exception as e:
+                    print(f'Could not log recloss_xy to wandb: {str(e)}')
         return loss
 
     @torch.no_grad()
@@ -218,44 +212,9 @@ class BBDMRunner(DiffusionBaseRunner):
         if context is not None:
             context = context[0:batch_size].to(device)
 
+        print(f"Sampling {batch_size} images for stage '{stage}' at step {self.global_step}")
         sample = net.sample(x, x_cond, context=context, clip_denoised=self.config.testing.clip_denoised,
                             config=self.config, device=device).cpu()
-
-        if stage in ['val'] and sample.numel() > 0:
-            try:
-                max_pixel = max(x.max().item(), sample.max().item())
-
-                x_ssim = x.squeeze(2) if x.dim() == 5 else x
-                sample_ssim = sample.squeeze(2) if sample.dim() == 5 else sample
-
-                min_dim = min(x_ssim.shape[-2:])
-                kernel_size = min(11, min_dim - 2 if min_dim > 2 else 1)
-
-                psnr = torchmetrics.image.PeakSignalNoiseRatio(data_range=max_pixel).to(device)
-                ssim = torchmetrics.image.StructuralSimilarityIndexMeasure(
-                    data_range=max_pixel,
-                    kernel_size=kernel_size
-                ).to(device)
-                mse = torchmetrics.MeanSquaredError().to(device)
-                mae = torchmetrics.MeanAbsoluteError().to(device)
-
-                try:
-                    psnr_val = psnr(sample_ssim.to(device), x_ssim)
-                    ssim_val = ssim(sample_ssim.to(device), x_ssim)
-                    mse_val = mse(sample.to(device), x)
-                    mae_val = mae(sample.to(device), x)
-
-                    if wandb.run is not None:
-                        wandb.log({
-                            f"{stage}/PSNR": psnr_val,
-                            f"{stage}/SSIM": ssim_val,
-                            f"{stage}/MSE": mse_val,
-                            f"{stage}/MAE": mae_val
-                        }, step=self.global_step)
-                except Exception as metric_error:
-                    print(f"Ошибка при вычислении метрик: {str(metric_error)}")
-            except Exception as e:
-                print(f"Оштбка при инициализации метрик: {str(e)}")
 
         grid_size = 4
         image_grid = get_image_grid(sample, grid_size, to_normal=False)
@@ -269,8 +228,8 @@ class BBDMRunner(DiffusionBaseRunner):
             try:
                 wandb.log({f'{stage}_skip_sample': [wandb.Image(image_grid, caption=f'{stage}_skip_sample')]},
                           step=self.global_step)
-            except:
-                print(f'Could not log {stage}_skip_sample to wandb')
+            except Exception as e:
+                print(f'Could not log {stage}_skip_sample to wandb: {str(e)}')
 
         image_grid = get_image_grid(x_cond.to('cpu'), grid_size, to_normal=False)
         image_grid = image_grid[:, :, mid_slice_index:mid_slice_index + 1]
@@ -281,8 +240,8 @@ class BBDMRunner(DiffusionBaseRunner):
             try:
                 wandb.log({f'{stage}_condition': [wandb.Image(image_grid, caption=f'{stage}_condition')]},
                           step=self.global_step)
-            except:
-                print(f'Could not log {stage}_condition to wandb')
+            except Exception as e:
+                print(f'Could not log {stage}_condition to wandb: {str(e)}')
 
         image_grid = get_image_grid(x.to('cpu'), grid_size, to_normal=False)
         image_grid = image_grid[:, :, mid_slice_index:mid_slice_index + 1]
@@ -293,20 +252,21 @@ class BBDMRunner(DiffusionBaseRunner):
             try:
                 wandb.log({f'{stage}_ground_truth': [wandb.Image(image_grid, caption=f'{stage}_ground_truth')]},
                           step=self.global_step)
-            except:
-                print(f'Could not log {stage}_ground_truth to wandb')
+            except Exception as e:
+                print(f'Could not log {stage}_ground_truth to wandb: {str(e)}')
 
         plt.figure(figsize=(20, 10))
-        plt.subplot(1, 4, 1);
-        plt.imshow(sample[0, 0].cpu().numpy(), cmap='gray');
+        plt.subplot(1, 4, 1)
+        plt.imshow(sample[0, 0].cpu().numpy(), cmap='gray')
         plt.title('Generated')
-        plt.subplot(1, 4, 2);
-        plt.imshow(x_cond[0, 0].cpu().numpy(), cmap='gray');
+        plt.subplot(1, 4, 2)
+        plt.imshow(x_cond[0, 0].cpu().numpy(), cmap='gray')
         plt.title('Condition')
-        plt.subplot(1, 4, 3);
-        plt.imshow(x[0, 0].cpu().numpy(), cmap='gray');
+        plt.subplot(1, 4, 3)
+        plt.imshow(x[0, 0].cpu().numpy(), cmap='gray')
         plt.title('Ground Truth')
         plt.savefig(os.path.join(sample_path, 'debug_compare.png'))
+        plt.close()
 
     @torch.no_grad()
     def sample_to_eval(self, net, test_dataset, sample_path):
